@@ -2,7 +2,7 @@
 #  Disc Ripper Pro — .gitignore
 # ──────────────────────────────────────────────
 
-# ── Python ───────────────────────────────────
+# ── Python & Environments ─────────────────────
 __pycache__/
 *.py[cod]
 *$py.class
@@ -10,26 +10,86 @@ __pycache__/
 *.pyd
 *.egg
 *.egg-info/
-dist/
-build/
 .eggs/
 pip-wheel-metadata/
-*.spec
-
-# ── PyInstaller output ───────────────────────
-/dist/
-/build/
-*.spec
-!Disc Ripper Pro.spec
-
-# ── Virtual environments ─────────────────────
 .venv/
 venv/
 env/
 ENV/
 .env
 
-# ── OS / system files ────────────────────────
+# ── PyInstaller & Build Outputs ───────────────
+build/
+dist/
+*.spec
+!Disc Ripper Pro.spec
+*.manifest
+
+# ── Release & Packaging Artifacts ─────────────
+# Portable builds, archives and release distributions
+[Rr]elease/
+release/
+Release/
+*Portable*/
+*_Portable/
+*.zip
+*.7z
+*.rar
+*.tar.gz
+
+# ── Bundled Binary Tools & Engines ────────────
+# Heavy CLI tools and binaries (FFmpeg, HandBrakeCLI, etc.)
+ffmpeg/
+handbrake/
+handbreak/
+tools/
+bin/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# ── Ripped Media & Output Files ───────────────
+# Never commit optical disc extraction outputs
+*.dat
+*.mpg
+*.mp4
+*.mov
+*.mkv
+*.avi
+*.wav
+*.mp3
+*.m4a
+*.aac
+*.ac3
+*.flac
+*_Chapter_Timeline.txt
+[Oo]utput/
+[Rr]ips/
+
+# ── Runtime, Config & Temporary Files ─────────
+config.json
+*.log
+*.tmp
+*.bak
+*.swp
+*.swo
+*.dmp
+*.crash
+
+# ── IDE & Editor Files ────────────────────────
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# ── Testing & Code Quality ────────────────────
+.pytest_cache/
+.coverage
+htmlcov/
+tests/__pycache__/
+
+# ── OS / System Files ─────────────────────────
 # Windows
 Thumbs.db
 Thumbs.db:encryptable
@@ -47,39 +107,3 @@ $RECYCLE.BIN/
 # Linux
 *~
 .directory
-
-# ── IDE / editor files ───────────────────────
-.vscode/
-.idea/
-*.sublime-project
-*.sublime-workspace
-
-# ── Logs & temporary files ───────────────────
-*.log
-*.tmp
-*.bak
-*.swp
-*.swo
-config.json
-
-# ── Compiled / portable output ───────────────
-# The portable ZIP and folder are build artifacts — do NOT commit them
-VCD_Ripper_Pro_Portable.zip
-release/
-*.zip
-
-# ── Sensitive / personal output ──────────────
-# Never commit ripped video output files
-*.dat
-*.mpg
-*.mp4
-*.mov
-*.wav
-*.mp3
-
-ffmpeg/
-*.exe
-
-ffmpeg/bin/ffmpeg.exe
-ffmpeg/bin/ffprobe.exe
-ffmpeg/

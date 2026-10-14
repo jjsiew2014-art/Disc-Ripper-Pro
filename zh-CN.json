@@ -1,6 +1,6 @@
 {
   "header": {
-    "title": "VCD Ripper Pro",
+    "title": "Disc Ripper Pro",
     "console": "📋  控制台",
     "clear_all": "🗑  清空",
     "clear_all_tip": "清空已加载的影片列表与进度",
@@ -9,32 +9,47 @@
     "eject_disc": "⏏  弹出光盘",
     "no_disc": "⏺  未检测到光盘",
     "vcd_on": "💿  VCD 位于 {drive}:",
-    "drive_no_vcd": "💿  驱动器 {drive}: (无 VCD)"
+    "dvd_on": "📀  DVD 位于 {drive}:",
+    "disc_on": "💿  光盘位于 {drive}:",
+    "drive_no_disc": "💿  驱动器 {drive}: (无光盘)",
+    "drive_no_vcd": "💿  驱动器 {drive}: (无光盘)"
   },
   "drive": {
     "detect_vcd": "检测到 VCD！",
-    "insert_vcd": "插入 VCD 光盘\n或点击浏览",
-    "folder_selected": "已选择 VCD 文件夹",
+    "detect_dvd": "检测到 DVD-Video！",
+    "detect_disc": "检测到光盘！",
+    "detecting": "正在检测驱动器...",
+    "detected": "已识别到驱动器",
+    "insert_vcd": "插入 VCD/DVD 光盘\n或点击浏览",
+    "insert_disc": "插入 VCD/DVD 光盘\n或点击浏览",
+    "folder_selected": "已选择光盘文件夹",
     "drive_label": "驱动器  {drive}:"
   },
   "source": {
     "title": "来源",
     "browse": "浏览文件夹",
-    "scan": "扫描 VCD"
+    "scan": "扫描光盘",
+    "scan_vcd": "扫描 VCD",
+    "scan_dvd": "扫描 DVD"
   },
   "selection": {
     "title": "选择",
     "all": "全选",
     "none": "取消全选",
-    "count": "已选择 {n} / {total}"
+    "count": "已选择 {n} / {total}",
+    "mode_title": "完整标题",
+    "mode_chapters": "选定章节",
+    "count_chapters": "已选 {n}/{total} 个章节",
+    "count_dvd_hierarchical": "已选 {titles} 个标题 · {chapters} 个章节"
   },
   "format": {
     "title": "输出格式",
     "video_mode": "🎬  视频",
     "audio_mode": "🎵  仅音频",
+    "both_mode": "🎬+🎵  视频与音频",
     "video_lbl": "视频格式：",
-    "dat_desc": "原始档案",
-    "mpg_desc": "MPEG-1/2 (原生 VCD)",
+    "dat_desc": "原始档案 (仅限 VCD)",
+    "mpg_desc": "MPEG-1/2 (原生光盘码流)",
     "mp4_desc": "H.264 + AAC (广泛兼容)",
     "mov_desc": "QuickTime / 苹果兼容",
     "dat_mode_lbl": "DAT 输出模式：",
@@ -45,12 +60,17 @@
     "res_1080p": "1440×1080 (拉伸至 1080p, 4:3)",
     "audio_lbl": "音频格式：",
     "wav_desc": "无损 PCM 音频",
-    "mp3_desc": "高品质压缩音频"
+    "mp3_desc": "高品质压缩音频",
+    "audio_track_lbl": "DVD 音轨选择：",
+    "target_title_lbl": "目标标题：",
+    "no_audio_tracks": "无可用音轨"
   },
   "output": {
     "title": "输出",
     "choose": "选择文件夹",
-    "auto_open": "提取完成后打开输出文件夹"
+    "auto_open": "提取完成后打开输出文件夹",
+    "dvd_title_folder": "根据 DVD 标题创建文件夹",
+    "dvd_timeline": "生成章节时间轴文件 (.txt)"
   },
   "rip": {
     "start": "开始提取",
@@ -59,11 +79,15 @@
   "content": {
     "title": "视频文件",
     "badge": "  {n}  ",
-    "badge_empty": "检测到 0 个轨道",
-    "empty_title": "未加载 VCD",
-    "empty_sub": "插入光盘或浏览至 VCD 文件夹，然后点击扫描 VCD",
+    "badge_empty": "检测到 0 个项目",
+    "badge_tracks": "检测到 {n} 个轨道",
+    "badge_titles": "检测到 {n} 个标题",
+    "empty_title": "未加载光盘",
+    "empty_sub": "插入光盘或浏览至 VCD/DVD 文件夹，然后点击扫描光盘",
     "scan_prog_folder": "正在扫描文件夹：{name}...",
     "scan_prog_read": "正在读取元数据 ({idx}/{total})：{name}",
+    "scan_prog_dvd": "正在扫描 DVD 结构：{name}...",
+    "scan_prog_titles": "正在发现 DVD 标题 ({idx}/{total})：{name}",
     "rip_prog_proc": "正在处理 ({idx}/{total})：{name}",
     "rip_prog_stop": "已停止：成功保存 {success}/{total} 个文件",
     "rip_prog_done": "已完成：成功提取 {success}/{total} 个文件"
@@ -104,9 +128,22 @@
     "125%": "125%",
     "150%": "150%"
   },
+  "priority": {
+    "title": "进程优先级",
+    "low": "低",
+    "medium": "中",
+    "high": "高"
+  },
+  "fps_mode": {
+    "title": "帧率模式",
+    "passthrough": "Passthrough",
+    "cfr": "CFR"
+  },
   "rename": {
     "title": "重命名文件",
     "inst": "输出文件名 (不含扩展名)：",
+    "chapter_title": "重命名章节",
+    "chapter_inst": "输出章节名称 (不含扩展名)：",
     "apply": "应用",
     "cancel": "取消"
   },
@@ -115,10 +152,16 @@
     "header": "批量重命名文件",
     "inst": "在下方编辑输出文件名 (不含扩展名)：",
     "track": "轨道 {n}:",
+    "title_item": "标题 {n}:",
+    "chapter_item": "章节 {n}:",
+    "tag_title": "[标题]",
+    "tag_chapter": "[章节]",
+    "tag_track": "[轨道]",
+    "live_preview": "预览：",
     "apply_all": "全部应用",
     "cancel": "取消",
     "no_files_title": "没有文件",
-    "no_files_msg": "没有可以重命名的文件。请先扫描 VCD。",
+    "no_files_msg": "没有可以重命名的文件。请先扫描光盘。",
     "seq_enable": "启用顺序编号",
     "seq_base": "基础名称：",
     "seq_start": "起始序号：",
@@ -127,17 +170,18 @@
   },
   "messageboxes": {
     "no_source_title": "没有来源",
-    "no_source_msg": "请先插入 VCD 或浏览至 VCD 文件夹。",
+    "no_source_msg": "请先插入 VCD/DVD 或浏览至光盘文件夹。",
     "invalid_path_title": "路径无效",
     "invalid_path_msg": "路径不存在：\n{path}",
     "no_files_title": "未找到文件",
-    "no_files_msg": "未找到 VCD 视频文件 (.DAT)。\n请确保选择了 VCD 光盘或文件夹的根目录。",
+    "no_files_msg": "未找到有效的 VCD 视频文件 (.DAT) 或 DVD 标题。\n请确保选择了 VCD 或 DVD 光盘/文件夹的根目录。",
     "ffmpeg_req_title": "未找到 FFmpeg",
-    "ffmpeg_req_msg": "音频提取和视频转换需要 FFmpeg。\n\n请从 https://ffmpeg.org/download.html 下载，并确保\nffmpeg.exe 位于您的 PATH 环境变量中，或者与本脚本同级的 'ffmpeg/bin' 文件夹中。\n\n提示：选择 'DAT' 视频格式可以直接提取原始文件而无需 FFmpeg。",
+    "ffmpeg_req_msg": "音频提取、DVD 转换和视频编码需要 FFmpeg。\n\n请从 https://ffmpeg.org/download.html 下载，并确保\nffmpeg.exe 位于您的 PATH 环境变量中，或者与本脚本同级的 'ffmpeg/bin' 文件夹中。\n\n提示：在 VCD 上选择 'DAT' 视频格式可以直接提取原始文件而无需 FFmpeg。",
     "no_sel_title": "未选择",
     "no_sel_msg": "未选择任何视频。要提取所有视频吗？",
+    "no_sel_chaps_msg": "未选择任何章节。要提取所有章节吗？",
     "no_vid_title": "没有视频",
-    "no_vid_msg": "请先扫描 VCD。",
+    "no_vid_msg": "请先扫描光盘。",
     "stop_title": "任务已停止",
     "stop_msg": "提取任务已被用户停止。\n\n{success} 个视频已保存至：\n{folder}",
     "eject_title": "弹出光盘？",
@@ -150,24 +194,31 @@
     "eject_fail_msg": "无法弹出驱动器 {drive}:\n{err}",
     "ejecting": "正在从驱动器 {drive} 弹出光盘:...",
     "unsupported_disc_title": "不支持的光盘格式",
-    "unsupported_disc_msg": "侦测到非 VCD 光盘（如音乐 CD 或 DVD）。本软件仅专门用于 VCD 光盘抓取与转换。",
+    "unsupported_disc_msg": "侦测到非 VCD 或 DVD-Video 光盘（如音乐 CD 或蓝光光盘）。Disc Ripper Pro 支持 VCD 与标准 DVD-Video 光盘抓取与转换。",
     "timeout_title": "光碟读取超时",
     "timeout_msg": "由于光盘严重划伤或坏道导致读取超时，已停止提取。已为您保留已完成抓取的视频片段。",
+    "dvd_encrypted_title": "加密或受保护的 DVD",
+    "dvd_encrypted_msg": "此 DVD 光盘存在加密或版权保护 (CSS)。Disc Ripper Pro 不会绕过版权保护，仅支持未加密的标准 DVD-Video 光盘。",
     "btn_ok": "确定",
     "btn_eject": "弹出光碟"
   },
   "log": {
     "non_vcd_blocked": "在驱动器 {drive} 检测到光盘，类型: {type}，已拦截处理流程。",
+    "unsupported_blocked": "在 {drive} 检测到光盘，类型: {type}。不是有效的 VCD 或 DVD-Video。",
     "vcd_auto": "自动检测到 VCD 光盘于 {drive}",
+    "dvd_auto": "自动检测到 DVD-Video 光盘于 {drive}",
     "vcd_found": "在 {folder} 找到 VCD 结构",
+    "dvd_found": "在 {folder} 找到 DVD-Video 结构",
     "vcd_not_std": "所选文件夹可能不是标准 VCD (未找到 .DAT 文件)。仍将扫描...",
     "scan_dir": "正在扫描 {path} …",
-    "no_vid": "在所选路径中未找到视频文件。",
+    "no_vid": "在所选路径中未找到视频轨道或标题。",
     "found_files": "找到 {total} 个文件。正在读取元数据…",
     "loaded": "已从 VCD 加载 {total} 个视频。已全选。",
+    "dvd_loaded": "已从 DVD-Video 加载 {total} 个标题。已全选。",
     "out_set": "输出文件夹设置为：{folder}",
     "cancel_req": "用户请求取消… 正在停止进程。",
     "start_ext": "开始提取 {total} 个文件 → {fmt} 格式…",
+    "start_chaps": "开始提取 {total} 个章节 → {fmt} 格式…",
     "extracting": "正在提取：{name} → {out}",
     "raw_dat_ok": "✓  已提取原始 DAT → 保存为：{name}  ({size} MB)",
     "copy_err": "直接复制错误：{err}",
@@ -188,6 +239,10 @@
     "eject_ps_fail": "PowerShell 弹出也失败：{err}",
     "batch_renamed": "已批量重命名 {total} 个文件。",
     "ffmpeg_dl": "未找到 FFmpeg！请从 https://ffmpeg.org 下载并添加到 PATH。",
-    "ffmpeg_hint": "或者将 ffmpeg.exe 放在本脚本旁边的 'ffmpeg/bin' 子文件夹中。"
+    "ffmpeg_hint": "或者将 ffmpeg.exe 放在本脚本旁边的 'ffmpeg/bin' 子文件夹中。",
+    "timeline_done": "已生成章节时间轴文件：{name}",
+    "timeline_no_chapters": "章节时间轴跳过（{name}）：输出文件中未找到章节元数据。",
+    "timeline_ffprobe_missing": "跳过生成章节时间轴：未找到 FFprobe 可执行文件。",
+    "timeline_failed": "生成章节时间轴失败（{name}）：{err}"
   }
 }

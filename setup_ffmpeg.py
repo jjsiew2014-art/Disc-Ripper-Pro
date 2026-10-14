@@ -27,7 +27,7 @@ def is_admin():
 
 def download_ffmpeg():
     print("=" * 56)
-    print("  FFmpeg Auto-Installer for VCD Ripper Pro")
+    print("  FFmpeg Auto-Installer for Disc Ripper Pro")
     print("=" * 56)
     print()
 
@@ -71,7 +71,7 @@ def download_ffmpeg():
 
         os.remove(zip_path)
         print(f"\n✓  FFmpeg installed to:\n   {DEST}")
-        print("\nYou can now launch VCD Ripper Pro.")
+        print("\nYou can now launch Disc Ripper Pro.")
 
     except Exception as e:
         print(f"\n✗  Error: {e}")

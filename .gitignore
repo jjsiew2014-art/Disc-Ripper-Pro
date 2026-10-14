@@ -1,5 +1,5 @@
 # ──────────────────────────────────────────────
-#  VCD Ripper Pro — .gitignore
+#  Disc Ripper Pro — .gitignore
 # ──────────────────────────────────────────────
 
 # ── Python ───────────────────────────────────
@@ -20,6 +20,7 @@ pip-wheel-metadata/
 /dist/
 /build/
 *.spec
+!Disc Ripper Pro.spec
 
 # ── Virtual environments ─────────────────────
 .venv/

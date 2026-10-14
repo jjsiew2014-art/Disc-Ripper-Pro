@@ -1,6 +1,6 @@
 {
   "header": {
-    "title": "VCD Ripper Pro",
+    "title": "Disc Ripper Pro",
     "console": "📋  Console",
     "clear_all": "🗑  Clear All",
     "clear_all_tip": "Clear loaded video files and progress",
@@ -9,32 +9,47 @@
     "eject_disc": "⏏  Eject Disc",
     "no_disc": "⏺  No disc detected",
     "vcd_on": "💿  VCD on {drive}:",
-    "drive_no_vcd": "💿  Drive {drive}: (no VCD)"
+    "dvd_on": "📀  DVD on {drive}:",
+    "disc_on": "💿  Disc on {drive}:",
+    "drive_no_disc": "💿  Drive {drive}: (no disc)",
+    "drive_no_vcd": "💿  Drive {drive}: (no disc)"
   },
   "drive": {
     "detect_vcd": "VCD detected!",
-    "insert_vcd": "Insert a VCD disc\nor click Browse",
-    "folder_selected": "VCD folder selected",
+    "detect_dvd": "DVD-Video detected!",
+    "detect_disc": "Disc detected!",
+    "detecting": "Drive detecting...",
+    "detected": "Drive detected",
+    "insert_vcd": "Insert a VCD/DVD disc\nor click Browse",
+    "insert_disc": "Insert a VCD/DVD disc\nor click Browse",
+    "folder_selected": "Disc folder selected",
     "drive_label": "Drive  {drive}:"
   },
   "source": {
     "title": "SOURCE",
     "browse": "Browse Folder",
-    "scan": "Scan VCD"
+    "scan": "Scan Disc",
+    "scan_vcd": "Scan VCD",
+    "scan_dvd": "Scan DVD"
   },
   "selection": {
     "title": "SELECTION",
     "all": "All",
     "none": "None",
-    "count": "{n} of {total} selected"
+    "count": "{n} of {total} selected",
+    "mode_title": "Complete Title",
+    "mode_chapters": "Selected Chapters",
+    "count_chapters": "{n} of {total} chapters selected",
+    "count_dvd_hierarchical": "{titles} title(s) · {chapters} chapter(s) selected"
   },
   "format": {
     "title": "OUTPUT FORMAT",
     "video_mode": "🎬  Video",
     "audio_mode": "🎵  Audio Only",
+    "both_mode": "🎬+🎵  Video and Audio",
     "video_lbl": "Video Format:",
-    "dat_desc": "Raw direct copy",
-    "mpg_desc": "MPEG-1/2 (native VCD stream)",
+    "dat_desc": "Raw direct copy (VCD only)",
+    "mpg_desc": "MPEG-1/2 (native disc stream)",
     "mp4_desc": "H.264 + AAC (widely compatible)",
     "mov_desc": "QuickTime / Apple compatible",
     "dat_mode_lbl": "DAT Output Mode:",
@@ -45,12 +60,17 @@
     "res_1080p": "1440×1080  (upscale to 1080p, 4:3)",
     "audio_lbl": "Audio Format:",
     "wav_desc": "Lossless PCM audio",
-    "mp3_desc": "High quality compressed audio"
+    "mp3_desc": "High quality compressed audio",
+    "audio_track_lbl": "DVD Audio Track:",
+    "target_title_lbl": "Target Title:",
+    "no_audio_tracks": "No audio tracks available"
   },
   "output": {
     "title": "OUTPUT FOLDER",
     "choose": "Choose Output Folder",
-    "auto_open": "Open output folder after ripped"
+    "auto_open": "Open output folder after ripped",
+    "dvd_title_folder": "Create folder with DVD title",
+    "dvd_timeline": "Generate Chapter Timeline File (.txt)"
   },
   "rip": {
     "start": "Start Ripping",
@@ -59,11 +79,15 @@
   "content": {
     "title": "Video Files",
     "badge": "  {n}  ",
-    "badge_empty": "0 tracks detected",
-    "empty_title": "No VCD loaded",
-    "empty_sub": "Insert a disc or browse to a VCD folder, then click Scan VCD",
+    "badge_empty": "0 items detected",
+    "badge_tracks": "{n} tracks detected",
+    "badge_titles": "{n} titles detected",
+    "empty_title": "No disc loaded",
+    "empty_sub": "Insert a VCD or DVD disc, or click Browse Folder, then click Scan Disc",
     "scan_prog_folder": "Scanning folder: {name}...",
     "scan_prog_read": "Reading metadata ({idx}/{total}): {name}",
+    "scan_prog_dvd": "Scanning DVD structure: {name}...",
+    "scan_prog_titles": "Discovering DVD titles ({idx}/{total}): {name}",
     "rip_prog_proc": "Processing {idx}/{total}: {name}",
     "rip_prog_stop": "Stopped: {success}/{total} files saved",
     "rip_prog_done": "Completed: {success}/{total} files ripped"
@@ -104,9 +128,22 @@
     "125%": "125%",
     "150%": "150%"
   },
+  "priority": {
+    "title": "Process Priority",
+    "low": "Low",
+    "medium": "Medium",
+    "high": "High"
+  },
+  "fps_mode": {
+    "title": "FPS Mode",
+    "passthrough": "Passthrough",
+    "cfr": "CFR"
+  },
   "rename": {
     "title": "Rename file",
     "inst": "Output filename (without extension):",
+    "chapter_title": "Rename Chapter",
+    "chapter_inst": "Output chapter name (without extension):",
     "apply": "Apply",
     "cancel": "Cancel"
   },
@@ -115,10 +152,16 @@
     "header": "Batch Rename Files",
     "inst": "Edit output filenames below (without extension):",
     "track": "Track {n}:",
+    "title_item": "Title {n}:",
+    "chapter_item": "Chapter {n}:",
+    "tag_title": "[Title]",
+    "tag_chapter": "[Chapter]",
+    "tag_track": "[Track]",
+    "live_preview": "Preview:",
     "apply_all": "Apply All",
     "cancel": "Cancel",
     "no_files_title": "No Files",
-    "no_files_msg": "No files to rename. Please scan a VCD first.",
+    "no_files_msg": "No files to rename. Please scan a disc first.",
     "seq_enable": "Enable Sequential Numbering",
     "seq_base": "Base Name:",
     "seq_start": "Start Index:",
@@ -127,17 +170,18 @@
   },
   "messageboxes": {
     "no_source_title": "No source",
-    "no_source_msg": "Please insert a VCD or browse to a VCD folder first.",
+    "no_source_msg": "Please insert a VCD or DVD, or browse to a disc folder first.",
     "invalid_path_title": "Invalid path",
     "invalid_path_msg": "Path does not exist:\n{path}",
     "no_files_title": "No files found",
-    "no_files_msg": "No VCD video files (.DAT) were found.\nMake sure you selected the root of a VCD disc or folder.",
+    "no_files_msg": "No valid video files (.DAT) or DVD titles were found.\nMake sure you selected the root of a VCD or DVD disc/folder.",
     "ffmpeg_req_title": "FFmpeg not found",
-    "ffmpeg_req_msg": "FFmpeg is required for audio extraction and video conversion.\n\nDownload from https://ffmpeg.org/download.html and ensure\nffmpeg.exe is in your PATH or in a 'ffmpeg/bin' folder next to this script.\n\nTip: Select 'DAT' video format to extract raw files without FFmpeg.",
+    "ffmpeg_req_msg": "FFmpeg is required for audio extraction, DVD ripping, and video conversion.\n\nDownload from https://ffmpeg.org/download.html and ensure\nffmpeg.exe is in your PATH or in a 'ffmpeg/bin' folder next to this script.\n\nTip: Select 'DAT' video format on VCDs to extract raw files without FFmpeg.",
     "no_sel_title": "No selection",
     "no_sel_msg": "No videos selected. Rip all videos?",
+    "no_sel_chaps_msg": "No chapters selected. Rip all chapters?",
     "no_vid_title": "No videos",
-    "no_vid_msg": "Please scan a VCD first.",
+    "no_vid_msg": "Please scan a disc first.",
     "stop_title": "Task Stopped",
     "stop_msg": "Ripping task was stopped by user.\n\n{success} video(s) were saved to:\n{folder}",
     "eject_title": "Eject Disc?",
@@ -150,24 +194,31 @@
     "eject_fail_msg": "Could not eject drive {drive}:\n{err}",
     "ejecting": "Ejecting disc from drive {drive}:...",
     "unsupported_disc_title": "Unsupported Disc Format",
-    "unsupported_disc_msg": "The detected optical disc is not a valid VCD (e.g., Audio CD or DVD). This app is specifically designed for VCD ripping.",
+    "unsupported_disc_msg": "The detected optical disc is not a valid VCD or DVD-Video (e.g., Audio CD or Blu-ray). Disc Ripper Pro supports VCD and standard DVD-Video optical discs.",
     "timeout_title": "Disc Read Timeout",
     "timeout_msg": "Ripping was stopped due to severely damaged disc sectors or read timeout. Partial video has been saved.",
+    "dvd_encrypted_title": "Encrypted or Protected DVD",
+    "dvd_encrypted_msg": "This DVD disc appears to be encrypted or copy-protected (CSS). Disc Ripper Pro does not bypass copy protection. Only unencrypted DVD-Video discs are supported.",
     "btn_ok": "OK",
     "btn_eject": "Eject Disc"
   },
   "log": {
     "non_vcd_blocked": "Disc detected in drive {drive}, type: {type}, blocking process.",
+    "unsupported_blocked": "Disc detected at {drive}, type: {type}. Not a valid VCD or DVD-Video.",
     "vcd_auto": "VCD disc auto-detected at {drive}",
+    "dvd_auto": "DVD-Video disc auto-detected at {drive}",
     "vcd_found": "VCD structure found at {folder}",
+    "dvd_found": "DVD-Video structure found at {folder}",
     "vcd_not_std": "Selected folder may not be a standard VCD (no .DAT files found). Scanning anyway...",
     "scan_dir": "Scanning {path} …",
-    "no_vid": "No video files found in selected path.",
+    "no_vid": "No video tracks or titles found in selected path.",
     "found_files": "Found {total} file(s). Reading metadata…",
     "loaded": "Loaded {total} video(s) from VCD. All selected.",
+    "dvd_loaded": "Loaded {total} title(s) from DVD-Video. All selected.",
     "out_set": "Output folder set: {folder}",
     "cancel_req": "Cancellation requested by user… Stopping process.",
     "start_ext": "Starting extraction of {total} file(s) → {fmt} format…",
+    "start_chaps": "Starting extraction of {total} chapter(s) → {fmt} format…",
     "extracting": "Extracting: {name} → {out}",
     "raw_dat_ok": "✓  Extracted raw DAT → Saved as: {name}  ({size} MB)",
     "copy_err": "Direct copy error: {err}",
@@ -188,6 +239,10 @@
     "eject_ps_fail": "PowerShell eject also failed: {err}",
     "batch_renamed": "Batch renamed {total} file(s).",
     "ffmpeg_dl": "FFmpeg not found! Download from https://ffmpeg.org and add to PATH.",
-    "ffmpeg_hint": "Or place ffmpeg.exe in a 'ffmpeg/bin' subfolder next to this script."
+    "ffmpeg_hint": "Or place ffmpeg.exe in a 'ffmpeg/bin' subfolder next to this script.",
+    "timeline_done": "Chapter timeline generated: {name}",
+    "timeline_no_chapters": "Chapter timeline for {name}: No chapter metadata found in the output file.",
+    "timeline_ffprobe_missing": "Chapter timeline generation skipped: FFprobe executable not found.",
+    "timeline_failed": "Chapter timeline failed for {name}: {err}"
   }
 }

@@ -1,6 +1,6 @@
 """
-VCD Ripper Pro - A modern VCD video extraction tool for Windows
-Uses FFmpeg to rip VCD videos with a premium dark UI
+Disc Ripper Pro - A modern VCD & DVD video extraction tool for Windows
+Uses FFmpeg to rip VCD and DVD-Video media with a premium dark UI
 """
 
 import tkinter as tk
@@ -8,6 +8,7 @@ from tkinter import ttk, filedialog, messagebox
 import subprocess
 import threading
 import queue
+import collections
 import atexit
 import os
 import sys
@@ -20,12 +21,17 @@ import string
 from pathlib import Path
 from datetime import datetime
 
+import dvd_engine
+import disc_detector
+from disc_detector import detect_disc, get_optical_drives, is_drive_ready, DiscCheckResult
+
 
 # ─────────────────────────────────────────────
 #  Constants & Colour Palette
 # ─────────────────────────────────────────────
-APP_NAME = "VCD Ripper Pro"
-APP_VERSION = "1.3.0"
+APP_NAME = "Disc Ripper Pro"
+APP_VERSION = "2.0.0"
+APP_USER_MODEL_ID = "jjsiew.discripperpro.2.0.0"
 
 THEME_DARK = {
     "bg_dark":        "#0D0F14",
@@ -41,7 +47,7 @@ THEME_DARK = {
     "cyan":           "#06B6D4",
     "text_primary":   "#F0F2FF",
     "text_secondary": "#8B93B0",
-    "text_muted":     "#4A5270",
+    "text_muted":     "#7E88A8",
     "border":         "#252A40",
     "border_accent":  "#4A44AA",
     "progress_bg":    "#1C2030",
@@ -189,13 +195,13 @@ OUTPUT_FORMATS = {
     "DAT": {
         "ext": ".dat",
         "args": [],
-        "desc": "Raw direct copy",
+        "desc": "Raw direct copy (VCD only)",
         "color": COLORS["dat_tag"],
     },
     "MPG": {
         "ext": ".mpg",
         "args": ["-c:v", "copy", "-c:a", "copy"],
-        "desc": "MPEG-1/2 (native VCD stream)",
+        "desc": "MPEG-1/2 (native disc stream)",
         "color": COLORS["mpg_tag"],
     },
     "MP4": {
@@ -236,7 +242,7 @@ AUDIO_FORMATS = {
 TRANSLATIONS = {
     "en": {
         "header": {
-            "title": "VCD Ripper Pro",
+            "title": "Disc Ripper Pro",
             "console": "📋  Console",
             "clear_all": "🗑  Clear All",
             "clear_all_tip": "Clear loaded video files and progress",
@@ -249,7 +255,12 @@ TRANSLATIONS = {
         },
         "drive": {
             "detect_vcd": "VCD detected!",
+            "detect_dvd": "DVD-Video detected!",
+            "detect_disc": "Disc detected!",
+            "detecting": "Drive detecting...",
+            "detected": "Drive detected",
             "insert_vcd": "Insert a VCD disc\nor click Browse",
+            "insert_disc": "Insert a VCD/DVD disc\nor click Browse",
             "folder_selected": "VCD folder selected",
             "drive_label": "Drive  {drive}:",
         },
@@ -263,11 +274,15 @@ TRANSLATIONS = {
             "all": "All",
             "none": "None",
             "count": "{n} of {total} selected",
+            "mode_title": "Complete Title",
+            "mode_chapters": "Selected Chapters",
+            "count_chapters": "{n} of {total} chapters selected",
         },
         "format": {
             "title": "OUTPUT FORMAT",
             "video_mode": "🎬  Video",
             "audio_mode": "🎵  Audio Only",
+            "both_mode": "🎬+🎵  Video and Audio",
             "video_lbl": "Video Format:",
             "dat_desc": "Raw direct copy",
             "mpg_desc": "MPEG-1/2 (native VCD stream)",
@@ -282,11 +297,16 @@ TRANSLATIONS = {
             "audio_lbl": "Audio Format:",
             "wav_desc": "Lossless PCM audio",
             "mp3_desc": "High quality compressed audio",
+            "audio_track_lbl": "DVD Audio Track:",
+            "target_title_lbl": "Target Title:",
+            "no_audio_tracks": "No audio tracks available",
         },
         "output": {
             "title": "OUTPUT FOLDER",
             "choose": "Choose Output Folder",
             "auto_open": "Open output folder after ripped",
+            "dvd_title_folder": "Create folder with DVD title",
+            "dvd_timeline": "Generate Chapter Timeline File (.txt)",
         },
         "rip": {
             "start": "Start Ripping",
@@ -340,6 +360,17 @@ TRANSLATIONS = {
             "125%": "125%",
             "150%": "150%",
         },
+        "priority": {
+            "title": "Process Priority",
+            "low": "Low",
+            "medium": "Medium",
+            "high": "High",
+        },
+        "fps_mode": {
+            "title": "FPS Mode",
+            "passthrough": "Passthrough",
+            "cfr": "CFR",
+        },
         "rename": {
             "title": "Rename file",
             "inst": "Output filename (without extension):",
@@ -363,17 +394,18 @@ TRANSLATIONS = {
         },
         "messageboxes": {
             "no_source_title": "No source",
-            "no_source_msg": "Please insert a VCD or browse to a VCD folder first.",
+            "no_source_msg": "Please insert a VCD/DVD or browse to a disc folder first.",
             "invalid_path_title": "Invalid path",
             "invalid_path_msg": "Path does not exist:\n{path}",
             "no_files_title": "No files found",
-            "no_files_msg": "No VCD video files (.DAT) were found.\nMake sure you selected the root of a VCD disc or folder.",
+            "no_files_msg": "No video files or titles were found.\nMake sure you selected a valid VCD or DVD disc/folder.",
             "ffmpeg_req_title": "FFmpeg not found",
             "ffmpeg_req_msg": "FFmpeg is required for audio extraction and video conversion.\n\nDownload from https://ffmpeg.org/download.html and ensure\nffmpeg.exe is in your PATH or in a 'ffmpeg/bin' folder next to this script.\n\nTip: Select 'DAT' video format to extract raw files without FFmpeg.",
             "no_sel_title": "No selection",
             "no_sel_msg": "No videos selected. Rip all videos?",
+            "no_sel_chaps_msg": "No chapters selected. Rip all chapters?",
             "no_vid_title": "No videos",
-            "no_vid_msg": "Please scan a VCD first.",
+            "no_vid_msg": "Please scan a VCD or DVD first.",
             "stop_title": "Task Stopped",
             "stop_msg": "Ripping task was stopped by user.\n\n{success} video(s) were saved to:\n{folder}",
             "eject_title": "Eject Disc?",
@@ -386,7 +418,7 @@ TRANSLATIONS = {
             "eject_fail_msg": "Could not eject drive {drive}:\n{err}",
             "ejecting": "Ejecting disc from drive {drive}:...",
             "unsupported_disc_title": "Unsupported Disc Format",
-            "unsupported_disc_msg": "The detected optical disc is not a valid VCD (e.g., Audio CD or DVD). This app is specifically designed for VCD ripping.",
+            "unsupported_disc_msg": "The detected optical disc or folder is not a valid VCD or DVD-Video disc. This app supports VCD and DVD-Video media.",
             "timeout_title": "Disc Read Timeout",
             "timeout_msg": "Ripping was stopped due to severely damaged disc sectors or read timeout. Partial video has been saved.",
             "btn_ok": "OK",
@@ -404,6 +436,7 @@ TRANSLATIONS = {
             "out_set": "Output folder set: {folder}",
             "cancel_req": "Cancellation requested by user… Stopping process.",
             "start_ext": "Starting extraction of {total} file(s) → {fmt} format…",
+            "start_chaps": "Starting extraction of {total} chapter(s) → {fmt} format…",
             "extracting": "Extracting: {name} → {out}",
             "raw_dat_ok": "✓  Extracted raw DAT → Saved as: {name}  ({size} MB)",
             "copy_err": "Direct copy error: {err}",
@@ -425,11 +458,15 @@ TRANSLATIONS = {
             "batch_renamed": "Batch renamed {total} file(s).",
             "ffmpeg_dl": "FFmpeg not found! Download from https://ffmpeg.org and add to PATH.",
             "ffmpeg_hint": "Or place ffmpeg.exe in a 'ffmpeg/bin' subfolder next to this script.",
+            "timeline_done": "Chapter timeline generated: {name}",
+            "timeline_no_chapters": "Chapter timeline for {name}: No chapter metadata found in the output file.",
+            "timeline_ffprobe_missing": "Chapter timeline generation skipped: FFprobe executable not found.",
+            "timeline_failed": "Chapter timeline failed for {name}: {err}",
         }
     },
     "zh_CN": {
         "header": {
-            "title": "VCD Ripper Pro",
+            "title": "Disc Ripper Pro",
             "console": "📋  控制台",
             "clear_all": "🗑  清空",
             "clear_all_tip": "清空已加载的影片列表与进度",
@@ -442,7 +479,12 @@ TRANSLATIONS = {
         },
         "drive": {
             "detect_vcd": "检测到 VCD！",
+            "detect_dvd": "检测到 DVD-Video！",
+            "detect_disc": "检测到光盘！",
+            "detecting": "正在检测驱动器...",
+            "detected": "已识别到驱动器",
             "insert_vcd": "插入 VCD 光盘\n或点击浏览",
+            "insert_disc": "插入 VCD/DVD 光盘\n或点击浏览",
             "folder_selected": "已选择 VCD 文件夹",
             "drive_label": "驱动器  {drive}:",
         },
@@ -456,11 +498,15 @@ TRANSLATIONS = {
             "all": "全选",
             "none": "取消全选",
             "count": "已选择 {n} / {total}",
+            "mode_title": "完整标题",
+            "mode_chapters": "选定章节",
+            "count_chapters": "已选 {n}/{total} 个章节",
         },
         "format": {
             "title": "输出格式",
             "video_mode": "🎬  视频",
             "audio_mode": "🎵  仅音频",
+            "both_mode": "🎬+🎵  视频与音频",
             "video_lbl": "视频格式：",
             "dat_desc": "原始档案",
             "mpg_desc": "MPEG-1/2 (原生 VCD)",
@@ -475,11 +521,16 @@ TRANSLATIONS = {
             "audio_lbl": "音频格式：",
             "wav_desc": "无损 PCM 音频",
             "mp3_desc": "高品质压缩音频",
+            "audio_track_lbl": "DVD 音轨选择：",
+            "target_title_lbl": "目标标题：",
+            "no_audio_tracks": "无可用音轨",
         },
         "output": {
             "title": "输出",
             "choose": "选择文件夹",
             "auto_open": "提取完成后打开输出文件夹",
+            "dvd_title_folder": "根据 DVD 标题创建文件夹",
+            "dvd_timeline": "生成章节时间轴文件 (.txt)",
         },
         "rip": {
             "start": "开始提取",
@@ -533,6 +584,17 @@ TRANSLATIONS = {
             "125%": "125%",
             "150%": "150%",
         },
+        "priority": {
+            "title": "进程优先级",
+            "low": "低",
+            "medium": "中",
+            "high": "高",
+        },
+        "fps_mode": {
+            "title": "帧率模式",
+            "passthrough": "Passthrough",
+            "cfr": "CFR",
+        },
         "rename": {
             "title": "重命名文件",
             "inst": "输出文件名 (不含扩展名)：",
@@ -556,17 +618,18 @@ TRANSLATIONS = {
         },
         "messageboxes": {
             "no_source_title": "没有来源",
-            "no_source_msg": "请先插入 VCD 或浏览至 VCD 文件夹。",
+            "no_source_msg": "请先插入 VCD/DVD 或浏览至光盘文件夹。",
             "invalid_path_title": "路径无效",
             "invalid_path_msg": "路径不存在：\n{path}",
             "no_files_title": "未找到文件",
-            "no_files_msg": "未找到 VCD 视频文件 (.DAT)。\n请确保选择了 VCD 光盘或文件夹的根目录。",
+            "no_files_msg": "未找到视频文件或影片标题。\n请确保选择了有效的 VCD 或 DVD 光盘/文件夹。",
             "ffmpeg_req_title": "未找到 FFmpeg",
             "ffmpeg_req_msg": "音频提取和视频转换需要 FFmpeg。\n\n请从 https://ffmpeg.org/download.html 下载，并确保\nffmpeg.exe 位于您的 PATH 环境变量中，或者与本脚本同级的 'ffmpeg/bin' 文件夹中。\n\n提示：选择 'DAT' 视频格式可以直接提取原始文件而无需 FFmpeg。",
             "no_sel_title": "未选择",
             "no_sel_msg": "未选择任何视频。要提取所有视频吗？",
+            "no_sel_chaps_msg": "未选择任何章节。要提取所有章节吗？",
             "no_vid_title": "没有视频",
-            "no_vid_msg": "请先扫描 VCD。",
+            "no_vid_msg": "请先扫描 VCD 或 DVD。",
             "stop_title": "任务已停止",
             "stop_msg": "提取任务已被用户停止。\n\n{success} 个视频已保存至：\n{folder}",
             "eject_title": "弹出光盘？",
@@ -579,7 +642,7 @@ TRANSLATIONS = {
             "eject_fail_msg": "无法弹出驱动器 {drive}:\n{err}",
             "ejecting": "正在从驱动器 {drive} 弹出光盘:...",
             "unsupported_disc_title": "不支持的光盘格式",
-            "unsupported_disc_msg": "侦测到非 VCD 光盘（如音乐 CD 或 DVD）。本软件仅专门用于 VCD 光盘抓取与转换。",
+            "unsupported_disc_msg": "检测到的光盘或文件夹不是有效的 VCD 或 DVD-Video 光盘。本软件支持 VCD 与 DVD-Video 媒体。",
             "timeout_title": "光碟读取超时",
             "timeout_msg": "由于光盘严重划伤或坏道导致读取超时，已停止提取。已为您保留已完成抓取的视频片段。",
             "btn_ok": "确定",
@@ -597,6 +660,7 @@ TRANSLATIONS = {
             "out_set": "输出文件夹设置为：{folder}",
             "cancel_req": "用户请求取消… 正在停止进程。",
             "start_ext": "开始提取 {total} 个文件 → {fmt} 格式…",
+            "start_chaps": "开始提取 {total} 个章节 → {fmt} 格式…",
             "extracting": "正在提取：{name} → {out}",
             "raw_dat_ok": "✓  已提取原始 DAT → 保存为：{name}  ({size} MB)",
             "copy_err": "直接复制错误：{err}",
@@ -618,6 +682,10 @@ TRANSLATIONS = {
             "batch_renamed": "已批量重命名 {total} 个文件。",
             "ffmpeg_dl": "未找到 FFmpeg！请从 https://ffmpeg.org 下载并添加到 PATH。",
             "ffmpeg_hint": "或者将 ffmpeg.exe 放在本脚本旁边的 'ffmpeg/bin' 子文件夹中。",
+            "timeline_done": "已生成章节时间轴文件：{name}",
+            "timeline_no_chapters": "章节时间轴跳过（{name}）：输出文件中未找到章节元数据。",
+            "timeline_ffprobe_missing": "跳过生成章节时间轴：未找到 FFprobe 可执行文件。",
+            "timeline_failed": "生成章节时间轴失败（{name}）：{err}",
         }
     }
 }
@@ -627,9 +695,13 @@ class I18n:
         self.lang = "en"
         self.theme = "system"
         self.scale = "100%"
+        self.priority = "High"
+        self.fps_mode = "Passthrough"
         self._refresh_cb = None
         self._theme_cb = None
         self._scale_cb = None
+        self._priority_cb = None
+        self._fps_mode_cb = None
         self._load_config()
 
     def _load_config(self):
@@ -661,6 +733,10 @@ class I18n:
                         self.theme = data["theme"]
                     if "scale" in data and data["scale"] in ("100%", "125%", "150%"):
                         self.scale = data["scale"]
+                    if "priority" in data and data["priority"] in ("Low", "Medium", "High"):
+                        self.priority = data["priority"]
+                    if "fps_mode" in data and data["fps_mode"] in ("CFR", "Passthrough"):
+                        self.fps_mode = data["fps_mode"]
         except Exception:
             pass
 
@@ -668,7 +744,7 @@ class I18n:
         try:
             exe_dir = os.path.dirname(sys.executable) if getattr(sys, 'frozen', False) else os.path.dirname(os.path.abspath(__file__))
             cfg_path = os.path.join(exe_dir, "config.json")
-            data = {"lang": self.lang, "theme": self.theme, "scale": self.scale}
+            data = {"lang": self.lang, "theme": self.theme, "scale": self.scale, "priority": self.priority, "fps_mode": self.fps_mode}
             with open(cfg_path, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2)
         except Exception:
@@ -694,7 +770,10 @@ class I18n:
             self.lang = lang
             self._save_config()
             if self._refresh_cb:
-                self._refresh_cb()
+                try:
+                    self._refresh_cb()
+                except Exception:
+                    pass
 
     def switch_theme(self, theme):
         if theme in ("system", "light", "dark"):
@@ -730,6 +809,32 @@ class I18n:
     def set_scale_callback(self, cb):
         self._scale_cb = cb
 
+    def switch_priority(self, priority):
+        if priority in ("Low", "Medium", "High"):
+            self.priority = priority
+            self._save_config()
+            if self._priority_cb:
+                try:
+                    self._priority_cb(self.priority)
+                except Exception:
+                    pass
+
+    def set_priority_callback(self, cb):
+        self._priority_cb = cb
+
+    def switch_fps_mode(self, mode):
+        if mode in ("CFR", "Passthrough"):
+            self.fps_mode = mode
+            self._save_config()
+            if self._fps_mode_cb:
+                try:
+                    self._fps_mode_cb(self.fps_mode)
+                except Exception:
+                    pass
+
+    def set_fps_mode_callback(self, cb):
+        self._fps_mode_cb = cb
+
 i18n = I18n()
 apply_theme_palette(i18n.get_effective_theme())
 
@@ -758,6 +863,15 @@ def _find_asset_path(filename):
 
 def get_header_icon(size=64):
     size = int(round(size))
+    if size in _HEADER_ICONS:
+        try:
+            icon = _HEADER_ICONS[size]
+            if icon and tk._default_root:
+                tk._default_root.tk.call("image", "type", str(icon))
+            elif not tk._default_root:
+                _HEADER_ICONS.pop(size, None)
+        except Exception:
+            _HEADER_ICONS.pop(size, None)
     if size not in _HEADER_ICONS:
         try:
             from PIL import Image, ImageTk
@@ -781,6 +895,13 @@ def set_window_icon(window):
     global _APP_ICON_PHOTO, _APP_ICON_ICO_PATH
     if window is None:
         return
+
+    # Check if cached _APP_ICON_PHOTO belongs to an active Tk interp
+    if _APP_ICON_PHOTO:
+        try:
+            _APP_ICON_PHOTO.width()
+        except Exception:
+            _APP_ICON_PHOTO = None
 
     # Ensure window is mapped and has an HWND
     try:
@@ -925,25 +1046,68 @@ def find_ffmpeg():
 # ─────────────────────────────────────────────
 BELOW_NORMAL_PRIORITY_CLASS = 0x00004000
 IDLE_PRIORITY_CLASS         = 0x00000040
+NORMAL_PRIORITY_CLASS       = 0x00000020
+ABOVE_NORMAL_PRIORITY_CLASS = 0x00008000
+HIGH_PRIORITY_CLASS         = 0x00000080
+
+RIPPING_PRIORITY_MAP = {
+    "Low": BELOW_NORMAL_PRIORITY_CLASS,
+    "Medium": NORMAL_PRIORITY_CLASS,
+    "High": HIGH_PRIORITY_CLASS,
+}
+
 DISC_READ_TIMEOUT_SECONDS   = 20.0  # Trigger timeout if no progress for 20s
 GRACEFUL_TERMINATE_TIMEOUT  = 3.0   # Wait up to 3s for graceful exit before force kill
 
-def set_low_process_priority(proc):
-    """Set CPU priority to Below Normal and I/O priority to Low for a subprocess on Windows."""
+def get_subprocess_kwargs(extra_flags=0):
+    """
+    Return platform-specific kwargs to completely suppress console window creation
+    and hide child process windows on Windows from a GUI / portable application.
+    """
+    kwargs = {}
+    if sys.platform == "win32":
+        creation_flags = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+        if extra_flags:
+            creation_flags |= extra_flags
+        kwargs["creationflags"] = creation_flags
+
+        startupinfo = subprocess.STARTUPINFO()
+        startupinfo.dwFlags |= getattr(subprocess, "STARTF_USESHOWWINDOW", 0x00000001)
+        startupinfo.wShowWindow = 0  # SW_HIDE
+        kwargs["startupinfo"] = startupinfo
+    return kwargs
+
+
+def get_priority_creation_flag(priority_level="Low"):
+    """Return Windows process creation flag corresponding to priority level ('Low', 'Medium', 'High')."""
+    return RIPPING_PRIORITY_MAP.get(priority_level, BELOW_NORMAL_PRIORITY_CLASS)
+
+
+def set_process_priority(proc, priority_level="Low", low_io=True):
+    """Set CPU priority and I/O priority for a subprocess on Windows based on selected priority level."""
     if not proc or not hasattr(proc, "_handle"):
         return
+    p_flag = RIPPING_PRIORITY_MAP.get(priority_level, BELOW_NORMAL_PRIORITY_CLASS)
     try:
-        ctypes.windll.kernel32.SetPriorityClass(int(proc._handle), BELOW_NORMAL_PRIORITY_CLASS)
+        ctypes.windll.kernel32.SetPriorityClass(int(proc._handle), p_flag)
     except Exception:
         pass
     try:
         # ProcessIoPriority = 0x21 (33). Values: 0 = Very Low, 1 = Low, 2 = Normal
-        io_priority = ctypes.c_ulong(1)  # Low I/O Priority
+        # For Low priority: if low_io is True, set Low I/O (1), else Normal (2).
+        # For Medium and High priority: set Normal I/O (2).
+        io_val = 1 if (priority_level == "Low" and low_io) else 2
+        io_priority = ctypes.c_ulong(io_val)
         ctypes.windll.ntdll.NtSetInformationProcess(
             int(proc._handle), 33, ctypes.byref(io_priority), ctypes.sizeof(io_priority)
         )
     except Exception:
         pass
+
+
+def set_low_process_priority(proc, low_io=True):
+    """Backward-compatible wrapper for setting Low process priority."""
+    set_process_priority(proc, priority_level="Low", low_io=low_io)
 
 def kill_process_tree(proc, force=False):
     """Terminate or force kill a subprocess and its entire process tree on Windows."""
@@ -961,7 +1125,7 @@ def kill_process_tree(proc, force=False):
                 subprocess.run(
                     ["taskkill", "/F", "/T", "/PID", str(pid)],
                     capture_output=True,
-                    creationflags=subprocess.CREATE_NO_WINDOW
+                    **get_subprocess_kwargs()
                 )
             except Exception:
                 pass
@@ -992,7 +1156,7 @@ def terminate_and_kill(proc, graceful_timeout=3.0):
 # ─────────────────────────────────────────────
 #  Single-Instance Lock & Window Activation helpers
 # ─────────────────────────────────────────────
-SINGLE_INSTANCE_MUTEX_NAME = "Global\\VCD_Ripper_Pro_Unique_Mutex_Lock"
+SINGLE_INSTANCE_MUTEX_NAME = "Global\\Disc_Ripper_Pro_Unique_Mutex_Lock"
 _APP_MUTEX_HANDLE = None
 
 def acquire_single_instance_lock(name=SINGLE_INSTANCE_MUTEX_NAME):
@@ -1047,7 +1211,7 @@ def release_single_instance_lock():
 atexit.register(release_single_instance_lock)
 
 def find_existing_window():
-    """Find the HWND of the currently running VCD Ripper Pro main window."""
+    """Find the HWND of the currently running Disc Ripper Pro main window."""
     if sys.platform != "win32":
         return None
 
@@ -1061,7 +1225,7 @@ def find_existing_window():
             buff = ctypes.create_unicode_buffer(length + 1)
             user32.GetWindowTextW(hwnd, buff, length + 1)
             title = buff.value
-            # Match top-level main window whose title starts with APP_NAME ("VCD Ripper Pro")
+            # Match top-level main window whose title starts with APP_NAME ("Disc Ripper Pro")
             if title.startswith(APP_NAME):
                 owner = user32.GetWindow(hwnd, 4)  # GW_OWNER = 4
                 if owner == 0 or not user32.IsWindow(owner):
@@ -1130,133 +1294,32 @@ def activate_existing_window(hwnd=None):
 # ─────────────────────────────────────────────
 def get_cd_drives():
     """Return list of optical drive letters on Windows."""
-    drives = []
-    try:
-        import ctypes
-        bitmask = ctypes.windll.kernel32.GetLogicalDrives()
-        for letter in string.ascii_uppercase:
-            if bitmask & 1:
-                drive = f"{letter}:\\"
-                dtype = ctypes.windll.kernel32.GetDriveTypeW(drive)
-                if dtype == 5:          # DRIVE_CDROM = 5
-                    drives.append(drive)
-            bitmask >>= 1
-    except Exception:
-        pass
-    return drives
+    return disc_detector.get_optical_drives()
 
 
-class DiscCheckResult:
-    """Represents disc type inspection result with dual tuple / bool support."""
-    def __init__(self, is_vcd: bool, disc_type: str, details: str = ""):
-        self.is_vcd = bool(is_vcd)
-        self.disc_type = str(disc_type)
-        self.details = str(details)
-
-    def __bool__(self):
-        return self.is_vcd
-
-    def __iter__(self):
-        return iter((self.is_vcd, self.disc_type))
-
-    def __getitem__(self, index):
-        return (self.is_vcd, self.disc_type)[index]
-
-    def __repr__(self):
-        return f"DiscCheckResult(is_vcd={self.is_vcd}, disc_type={self.disc_type!r}, details={self.details!r})"
+def detect_disc(path_or_drive):
+    """Inspect optical drive or folder and determine media type (VCD, DVD-Video, etc.)."""
+    return disc_detector.detect_disc(path_or_drive)
 
 
-def is_vcd_disc(drive_path) -> DiscCheckResult:
+def is_vcd_disc(drive_path):
     """
-    Robust, fast check if the given path/drive contains a valid VCD disc.
-    Prioritizes checking standard MPEGAV/VCD directories and .DAT files
-    without deep file tree scanning to avoid optical drive IO blocking.
-    Returns DiscCheckResult(is_vcd: bool, disc_type: str).
+    Robust check if the given path/drive contains a valid VCD or DVD disc.
+    Returns DiscCheckResult.
     """
-    if not drive_path:
-        return DiscCheckResult(False, "No Disc", "Empty path")
-
-    try:
-        p = Path(drive_path)
-        if not p.exists() or not p.is_dir():
-            return DiscCheckResult(False, "No Disc", "Path does not exist or is not a directory")
-
-        # Fast shallow inspection of root entries only - avoids recursive tree traversal
-        try:
-            root_entries = list(p.iterdir())
-        except (PermissionError, OSError):
-            return DiscCheckResult(False, "Unreadable Disc", "Cannot read root directory")
-
-        if not root_entries:
-            return DiscCheckResult(False, "Empty Disc", "No files found on drive")
-
-        # Map uppercase entry names for case-insensitive lookup
-        names_map = {e.name.upper(): e for e in root_entries}
-
-        # 1. Primary VCD check: MPEGAV or MPEG2 directories
-        for vcd_dir in ("MPEGAV", "MPEG2"):
-            if vcd_dir in names_map and names_map[vcd_dir].is_dir():
-                try:
-                    for item in names_map[vcd_dir].iterdir():
-                        if item.is_file() and item.suffix.upper() == ".DAT":
-                            return DiscCheckResult(True, "VCD", f"Found {item.name} in {vcd_dir}")
-                except (PermissionError, OSError):
-                    pass
-                return DiscCheckResult(True, "VCD", f"Found {vcd_dir} directory")
-
-        # Check standard VCD metadata directory (White Book specification)
-        if "VCD" in names_map and names_map["VCD"].is_dir():
-            try:
-                sub_names = {item.name.upper() for item in names_map["VCD"].iterdir() if item.is_file()}
-                if any(vcd_meta in sub_names for vcd_meta in ("INFO.VCD", "ENTRIES.VCD", "LOT.VCD", "PSD.VCD")):
-                    return DiscCheckResult(True, "VCD", "Found standard VCD metadata directory")
-            except (PermissionError, OSError):
-                pass
-            return DiscCheckResult(True, "VCD", "Found VCD directory")
-
-        # Check for .DAT video/audio tracks directly in root
-        for e in root_entries:
-            try:
-                if e.is_file() and e.suffix.upper() == ".DAT":
-                    return DiscCheckResult(True, "VCD", f"Found root DAT file: {e.name}")
-            except (PermissionError, OSError):
-                pass
-
-        # Check other VCD markers from VCD_DAT_PATHS (e.g. SEGMENT)
-        for sub in VCD_DAT_PATHS:
-            sub_u = sub.upper()
-            if sub_u in names_map and names_map[sub_u].is_dir():
-                try:
-                    for item in names_map[sub_u].iterdir():
-                        if item.is_file() and item.suffix.upper() == ".DAT":
-                            return DiscCheckResult(True, "VCD", f"Found DAT file in {sub}")
-                except (PermissionError, OSError):
-                    pass
-
-        # 2. Identify common non-VCD optical disc formats
-        # DVD-Video (VIDEO_TS / AUDIO_TS)
-        if "VIDEO_TS" in names_map or "AUDIO_TS" in names_map:
-            return DiscCheckResult(False, "DVD-Video", "Found DVD-Video structure (VIDEO_TS)")
-
-        # Blu-ray (BDMV / CERTIFICATE)
-        if "BDMV" in names_map or "CERTIFICATE" in names_map:
-            return DiscCheckResult(False, "Blu-ray", "Found Blu-ray structure (BDMV)")
-
-        # Audio CD (CD-DA tracks mapped as .cda files on Windows)
-        cda_files = [e for e in root_entries if e.is_file() and e.suffix.lower() == ".cda"]
-        if cda_files:
-            return DiscCheckResult(False, "Audio CD", f"Found {len(cda_files)} Audio CD track(s)")
-
-        # 3. Non-VCD Data Disc
-        return DiscCheckResult(False, "Data CD/DVD", "No VCD directory structure or .DAT files found")
-
-    except Exception as exc:
-        return DiscCheckResult(False, "Unknown Disc", f"Inspection error: {exc}")
+    return disc_detector.detect_disc(drive_path)
 
 
 def is_vcd_folder(path):
     """Return True if the given path looks like a VCD structure."""
-    return bool(is_vcd_disc(path))
+    res = disc_detector.detect_disc(path)
+    return res.is_vcd
+
+
+def is_dvd_folder(path):
+    """Return True if the given path looks like a DVD-Video structure."""
+    res = disc_detector.detect_disc(path)
+    return res.is_dvd
 
 
 def find_dat_files(base_path):
@@ -1394,7 +1457,7 @@ def probe_video(ffprobe_path, file_path):
             errors="replace",
             env=get_subprocess_env(),
             timeout=15,
-            creationflags=subprocess.CREATE_NO_WINDOW | BELOW_NORMAL_PRIORITY_CLASS
+            **get_subprocess_kwargs(extra_flags=BELOW_NORMAL_PRIORITY_CLASS)
         )
         data = json.loads(result.stdout) if (result.stdout and result.stdout.strip()) else {}
         clean_filename = sanitize_filename(Path(file_path).name, fallback="track")
@@ -1566,11 +1629,15 @@ class FlatButton(tk.Frame):
             "success":  (COLORS["success"],       "#30D870",               COLORS["bg_dark"]),
         }
         bg, bg_h, fg = styles.get(style, styles["primary"])
-        super().__init__(parent, bg=bg, cursor="hand2", **kwargs)
+        if style == "ghost":
+            super().__init__(parent, bg=bg, cursor="hand2", highlightthickness=1, highlightbackground=COLORS["border"], **kwargs)
+        else:
+            super().__init__(parent, bg=bg, cursor="hand2", **kwargs)
         self._style = style
         self._fg   = fg
         self._bg   = bg
         self._bg_h = bg_h
+        self._active = False
         label_text = f"{icon}  {text}" if icon else text
         self._lbl = tk.Label(
             self, text=label_text, font=FONTS["subhead"],
@@ -1600,7 +1667,8 @@ class FlatButton(tk.Frame):
 
     def configure_state(self, enabled=True):
         if enabled:
-            self._lbl.configure(fg=self._fg)
+            cur_fg = COLORS["accent"] if getattr(self, "_active", False) else self._fg
+            self._lbl.configure(fg=cur_fg)
             for w in (self, self._lbl):
                 w.bind("<Button-1>", self._on_click)
                 w.configure(cursor="hand2")
@@ -1614,6 +1682,17 @@ class FlatButton(tk.Frame):
         label_text = f"{icon}  {text}" if icon else text
         self._lbl.configure(text=label_text)
 
+    def set_active(self, active: bool = True):
+        self._active = bool(active)
+        cur_fg = COLORS["accent"] if self._active else self._fg
+        self._lbl.configure(fg=cur_fg)
+        if self._style == "ghost":
+            border_col = COLORS["accent"] if self._active else COLORS["border"]
+            self.configure(highlightbackground=border_col)
+
+    def is_active(self) -> bool:
+        return getattr(self, "_active", False)
+
     def apply_theme(self):
         styles = {
             "primary":  (COLORS["accent"],       COLORS["accent_hover"],  COLORS.get("btn_primary_fg", "#FFFFFF")),
@@ -1626,21 +1705,30 @@ class FlatButton(tk.Frame):
         self._bg_h = bg_h
         self._fg = fg
         self.configure(bg=bg)
-        self._lbl.configure(bg=bg, fg=fg)
+        cur_fg = COLORS["accent"] if getattr(self, "_active", False) else fg
+        self._lbl.configure(bg=bg, fg=cur_fg)
+        if self._style == "ghost":
+            border = COLORS["accent"] if getattr(self, "_active", False) else COLORS["border"]
+            self.configure(highlightthickness=1, highlightbackground=border)
 
 
 # ─────────────────────────────────────────────
 #  Video card widget (inside the file list)
 # ─────────────────────────────────────────────
 class VideoCard(tk.Frame):
-    def __init__(self, parent, info, index, on_toggle, **kwargs):
+    def __init__(self, parent, info, index, on_toggle, on_chapter_toggle=None, **kwargs):
         super().__init__(parent, bg=COLORS["bg_card"],
                          highlightbackground=COLORS["border"],
                          highlightthickness=1, **kwargs)
-        self.info      = info
-        self.index     = index
-        self.on_toggle = on_toggle
-        self._selected = False
+        self.info              = info
+        self.index             = index
+        self.on_toggle         = on_toggle
+        self.on_chapter_toggle = on_chapter_toggle
+        self._selected         = False
+        self._chapters_expanded = False
+        self._chapter_vars     = {}   # c_num -> BooleanVar
+        self._chapter_name_labels = {}  # c_num -> Label widget
+        self._chapter_rows     = []   # row Frame widgets
         self._build()
         self._bind_all()
 
@@ -1659,7 +1747,18 @@ class VideoCard(tk.Frame):
         )
         self._chk.place(relx=0.5, rely=0.5, anchor="center")
 
-        # Content
+        # Rename button (right side) — anchored to right before content expands
+        self._rename_btn = tk.Button(
+            self, text="✏",
+            font=FONTS["rename_btn"], bg=COLORS["bg_card"],
+            fg=COLORS.get("rename_btn", "#38BDF8"), relief="flat", bd=0,
+            cursor="hand2", activebackground=COLORS["bg_hover"],
+            activeforeground=COLORS.get("rename_btn_hover", "#7DD3FC"),
+            command=self._on_rename
+        )
+        self._rename_btn.pack(side="right", padx=(0, scale_val(14)), pady=0)
+
+        # Content (center - expands to fill space)
         self._content_frame = tk.Frame(self, bg=COLORS["bg_card"], padx=scale_val(14), pady=scale_val(14))
         self._content_frame.pack(side="left", fill="both", expand=True)
 
@@ -1673,7 +1772,7 @@ class VideoCard(tk.Frame):
         )
         self._filename_lbl.pack(side="left")
         self._size_lbl = tk.Label(
-            self._row1, text=f"{self.info['size_mb']} MB",
+            self._row1, text=f"{self.info.get('size_mb', 0.0)} MB",
             font=FONTS["badge"], bg=COLORS["accent_dim"],
             fg=COLORS.get("badge_fg", COLORS["text_primary"]), padx=scale_val(8), pady=scale_val(3)
         )
@@ -1682,43 +1781,190 @@ class VideoCard(tk.Frame):
         # Row 2: metadata
         self._row2 = tk.Frame(self._content_frame, bg=COLORS["bg_card"])
         self._row2.pack(fill="x", pady=(scale_val(6), 0))
-        meta = (
-            f"⏱  {format_duration(self.info['duration'])}     "
-            f"📐 {self.info['width']}×{self.info['height']}     "
-            f"🎬 {self.info['codec']}     "
-            f"🎞 {self.info['fps']}     "
-            f"📊 {self.info['bitrate']}"
-        )
+        chapters_data = self.info.get("chapters_data", [])
+        if self.info.get("disc_type") == "DVD":
+            dur_str = f"⏱  {format_duration(self.info.get('duration', 0))}"
+            chaps = len(chapters_data) if chapters_data else self.info.get("chapter_count", 0)
+            ch_str = f"📑 {chaps} ch" if chaps > 1 else ""
+            w = self.info.get('width', 720)
+            h = self.info.get('height', 480)
+            res_str = f"📐 {w}×{h}"
+            ar = self.info.get("aspect_ratio")
+            if ar:
+                res_str += f" ({ar})"
+            codec_str = f"🎬 {self.info.get('codec', 'MPEG-2')}"
+            fps_val = self.info.get('fps', '')
+            fps_str = f"🎞 {fps_val}" if fps_val else ""
+            aud = self.info.get('audio_summary', '')
+            aud_str = f"🔊 {aud}" if aud else ""
+
+            meta_parts = [p for p in (dur_str, ch_str, res_str, codec_str, fps_str, aud_str) if p]
+            meta = "     ".join(meta_parts)
+        else:
+            w_h = f"{self.info.get('width', 352)}×{self.info.get('height', 288)}" if ('width' in self.info or 'height' in self.info) else ""
+            meta_parts = [
+                f"⏱  {format_duration(self.info.get('duration', 0.0))}" if 'duration' in self.info else "",
+                f"📐 {w_h}" if w_h else "",
+                f"🎬 {self.info.get('codec', '')}" if self.info.get('codec') else "",
+                f"🎞 {self.info.get('fps', '')}" if self.info.get('fps') else "",
+                f"📊 {self.info.get('bitrate', '')}" if self.info.get('bitrate') else ""
+            ]
+            meta = "     ".join([p for p in meta_parts if p])
         self._meta_lbl = tk.Label(self._row2, text=meta, font=FONTS["small"],
                  bg=COLORS["bg_card"], fg=COLORS["text_secondary"])
         self._meta_lbl.pack(side="left")
 
-        # Rename button (right side) — larger, visible accent color
-        self._rename_btn = tk.Button(
-            self, text="✏",
-            font=FONTS["rename_btn"], bg=COLORS["bg_card"],
-            fg=COLORS.get("rename_btn", "#38BDF8"), relief="flat", bd=0,
-            cursor="hand2", activebackground=COLORS["bg_hover"],
-            activeforeground=COLORS.get("rename_btn_hover", "#7DD3FC"),
-            command=self._on_rename
-        )
-        self._rename_btn.pack(side="right", padx=(0, scale_val(14)), pady=0)
+        # Initialize chapter variables
+        for ch in chapters_data:
+            c_num = int(ch.get("chapter_number", 1))
+            self._chapter_vars[c_num] = tk.BooleanVar(value=False)
+
+        # If DVD and multiple chapters exist, add expandable button and expand by default
+        if self.info.get("disc_type") == "DVD" and len(chapters_data) > 1:
+            self._expand_btn = tk.Button(
+                self._row2,
+                text=f"📑 {len(chapters_data)} Chapters ▲",
+                font=FONTS["small_bold"],
+                bg=COLORS["bg_hover"],
+                fg=COLORS["accent"],
+                relief="flat", bd=0, padx=scale_val(8), pady=scale_val(1),
+                cursor="hand2", activebackground=COLORS["bg_dark"], activeforeground=COLORS["accent"],
+                command=self._toggle_chapters
+            )
+            self._expand_btn.pack(side="left", padx=(scale_val(12), 0))
+
+            self._chapters_container = tk.Frame(self._content_frame, bg=COLORS["bg_card"])
+            # Expand all chapters by default so user sees them right away
+            self.expand_chapters(True)
+
+    def _build_chapters(self):
+        if not hasattr(self, "_chapters_container"):
+            return
+        for w in self._chapters_container.winfo_children():
+            w.destroy()
+        self._chapter_rows.clear()
+
+        chapters = self.info.get("chapters_data", [])
+        if not chapters:
+            return
+
+        header = tk.Frame(self._chapters_container, bg=COLORS["bg_dark"], padx=scale_val(8), pady=scale_val(4))
+        header.pack(fill="x", pady=(scale_val(4), scale_val(2)))
+        tk.Label(
+            header, text="Chapter", font=FONTS["badge"],
+            bg=COLORS["bg_dark"], fg=COLORS["text_secondary"]
+        ).pack(side="left", padx=(scale_val(28), scale_val(10)))
+        tk.Label(
+            header, text="Time Range", font=FONTS["badge"],
+            bg=COLORS["bg_dark"], fg=COLORS["text_secondary"]
+        ).pack(side="left", padx=scale_val(10))
+        tk.Label(
+            header, text="Duration", font=FONTS["badge"],
+            bg=COLORS["bg_dark"], fg=COLORS["text_secondary"]
+        ).pack(side="right", padx=scale_val(10))
+
+        for ch in chapters:
+            c_num = int(ch.get("chapter_number", 1))
+            if c_num not in self._chapter_vars:
+                self._chapter_vars[c_num] = tk.BooleanVar(value=False)
+            var = self._chapter_vars[c_num]
+
+            row = tk.Frame(self._chapters_container, bg=COLORS["bg_card"], padx=scale_val(8), pady=scale_val(3))
+            row.pack(fill="x")
+            self._chapter_rows.append(row)
+
+            cb = tk.Checkbutton(
+                row, variable=var,
+                bg=COLORS["bg_card"], activebackground=COLORS["bg_hover"],
+                fg=COLORS["accent"], selectcolor=COLORS["bg_card"],
+                command=lambda cn=c_num: self._on_chapter_cb(cn),
+                cursor="hand2", relief="flat", bd=0
+            )
+            cb.pack(side="left")
+
+            display_name = ch.get("custom_stem") or ch.get("name") or f"Chapter {c_num:02d}"
+            name_lbl = tk.Label(
+                row, text=display_name,
+                font=FONTS["small_bold"], bg=COLORS["bg_card"], fg=COLORS["text_primary"]
+            )
+            name_lbl.pack(side="left", padx=(scale_val(6), scale_val(10)))
+            self._chapter_name_labels[c_num] = name_lbl
+
+            range_text = f"{ch.get('start_str', '0:00')} → {ch.get('end_str', '')}"
+            range_lbl = tk.Label(
+                row, text=range_text,
+                font=FONTS["mono"], bg=COLORS["bg_card"], fg=COLORS["text_secondary"]
+            )
+            range_lbl.pack(side="left", padx=scale_val(10))
+
+            # Single-item rename button for chapter
+            ch_rename_btn = tk.Button(
+                row, text="✏",
+                font=FONTS["small_bold"], bg=COLORS["bg_card"],
+                fg=COLORS.get("rename_btn", "#38BDF8"), relief="flat", bd=0,
+                cursor="hand2", activebackground=COLORS["bg_hover"],
+                activeforeground=COLORS.get("rename_btn_hover", "#7DD3FC"),
+                command=lambda cn=c_num: self._on_rename_chapter(cn)
+            )
+            ch_rename_btn.pack(side="right", padx=(scale_val(4), scale_val(8)))
+
+            dur_text = f"⏱ {ch.get('duration_str', '')}"
+            dur_lbl = tk.Label(
+                row, text=dur_text,
+                font=FONTS["small"], bg=COLORS["bg_card"], fg=COLORS["accent"]
+            )
+            dur_lbl.pack(side="right", padx=scale_val(6))
+
+    def _toggle_chapters(self):
+        self.expand_chapters(not self._chapters_expanded)
+
+    def toggle_chapters(self, expand: bool = True):
+        self.expand_chapters(expand)
+
+    def expand_chapters(self, expand: bool = True):
+        if not hasattr(self, "_chapters_container") or not self.info.get("chapters_data"):
+            return
+        chaps = self.info.get("chapters_data", [])
+        if expand and not self._chapters_expanded:
+            self._build_chapters()
+            self._chapters_container.pack(fill="x", pady=(scale_val(6), 0))
+            self._chapters_expanded = True
+            if hasattr(self, "_expand_btn"):
+                self._expand_btn.configure(text=f"📑 {len(chaps)} Chapters ▲")
+        elif not expand and self._chapters_expanded:
+            self._chapters_container.pack_forget()
+            self._chapters_expanded = False
+            if hasattr(self, "_expand_btn"):
+                self._expand_btn.configure(text=f"📑 {len(chaps)} Chapters ▼")
+
+    def _on_chapter_cb(self, c_num):
+        val = self._chapter_vars[c_num].get()
+        if val:
+            # Checking any Chapter clears its parent Main Title's complete-title selection
+            self._chk_var.set(False)
+            self._selected = False
+        any_chap = any(v.get() for v in self._chapter_vars.values())
+        self.configure(highlightbackground=COLORS["accent"] if (self._selected or any_chap) else COLORS["border"])
+        if self.on_chapter_toggle:
+            self.on_chapter_toggle(self.index, c_num, val)
 
     def _bind_all(self):
         for w in self.winfo_children():
-            if w is not self._rename_btn:
+            if w not in (getattr(self, "_rename_btn", None), getattr(self, "_expand_btn", None)):
                 w.bind("<Enter>", self._hover_on)
                 w.bind("<Leave>", self._hover_off)
         self.bind("<Enter>", self._hover_on)
         self.bind("<Leave>", self._hover_off)
 
     def _hover_on(self, _=None):
-        if not self._selected:
+        any_chap = any(v.get() for v in self._chapter_vars.values())
+        if not (self._selected or any_chap):
             self.configure(bg=COLORS["bg_hover"],
                            highlightbackground=COLORS["border_accent"])
 
     def _hover_off(self, _=None):
-        if not self._selected:
+        any_chap = any(v.get() for v in self._chapter_vars.values())
+        if not (self._selected or any_chap):
             self.configure(bg=COLORS["bg_card"],
                            highlightbackground=COLORS["border"])
 
@@ -1726,14 +1972,74 @@ class VideoCard(tk.Frame):
         self._selected = self._chk_var.get()
         if self._selected:
             self.configure(highlightbackground=COLORS["accent"])
+            # Checking a Main Title selects it for complete-title ripping
+            # and immediately clears all child Chapter selections under that title
+            self.clear_all_chapters()
         else:
-            self.configure(highlightbackground=COLORS["border"])
+            any_chap = any(v.get() for v in self._chapter_vars.values())
+            self.configure(highlightbackground=COLORS["accent"] if any_chap else COLORS["border"])
         self.on_toggle(self.index, self._selected)
 
     def set_selected(self, val: bool):
         self._chk_var.set(val)
         self._selected = val
-        self.configure(highlightbackground=COLORS["accent"] if val else COLORS["border"])
+        any_chap = any(v.get() for v in self._chapter_vars.values())
+        self.configure(highlightbackground=COLORS["accent"] if (val or any_chap) else COLORS["border"])
+
+    def set_title_selected(self, val: bool):
+        self.set_selected(val)
+
+    def clear_all_chapters(self, notify: bool = True):
+        for c_num, var in self._chapter_vars.items():
+            if var.get():
+                var.set(False)
+                if notify and self.on_chapter_toggle:
+                    self.on_chapter_toggle(self.index, c_num, False)
+        self.configure(highlightbackground=COLORS["accent"] if self._selected else COLORS["border"])
+
+    def select_all_chapters(self, notify: bool = False):
+        if not self._chapter_vars and self.info.get("chapters_data"):
+            self._build_chapters()
+        self._chk_var.set(False)
+        self._selected = False
+        for c_num, var in self._chapter_vars.items():
+            if not var.get():
+                var.set(True)
+                if notify and self.on_chapter_toggle:
+                    self.on_chapter_toggle(self.index, c_num, True)
+            else:
+                var.set(True)
+        any_chap = bool(self._chapter_vars)
+        self.configure(highlightbackground=COLORS["accent"] if any_chap else COLORS["border"])
+
+    def set_chapter_selected(self, c_num: int, val: bool):
+        if not self._chapter_vars and self.info.get("chapters_data"):
+            self._build_chapters()
+        if c_num in self._chapter_vars:
+            self._chapter_vars[c_num].set(val)
+        any_chap = any(v.get() for v in self._chapter_vars.values())
+        self.configure(highlightbackground=COLORS["accent"] if (self._selected or any_chap) else COLORS["border"])
+
+    @property
+    def video_info(self):
+        return self.info
+
+    @property
+    def selected(self) -> bool:
+        return self._selected
+
+    def is_selected(self) -> bool:
+        return self._selected
+
+    def are_any_chapters_selected(self) -> bool:
+        return any(v.get() for v in self._chapter_vars.values())
+
+    def set_custom_name(self, name: str):
+        clean = sanitize_filename(name, fallback=self.info.get("filename", "Title"))
+        self.info["custom_stem"] = clean
+        self.info["filename"] = clean
+        if hasattr(self, "_filename_lbl"):
+            self._filename_lbl.configure(text=f"📼  {clean}")
 
     def apply_theme(self):
         border_color = COLORS["accent"] if self._selected else COLORS["border"]
@@ -1760,6 +2066,35 @@ class VideoCard(tk.Frame):
             self._row2.configure(bg=COLORS["bg_card"])
         if hasattr(self, "_meta_lbl"):
             self._meta_lbl.configure(bg=COLORS["bg_card"], fg=COLORS["text_secondary"])
+        if hasattr(self, "_expand_btn"):
+            self._expand_btn.configure(
+                bg=COLORS["bg_hover"], fg=COLORS["accent"],
+                activebackground=COLORS["bg_dark"], activeforeground=COLORS["accent"]
+            )
+        if hasattr(self, "_chapters_container"):
+            self._chapters_container.configure(bg=COLORS["bg_card"])
+            if getattr(self, "_chapters_expanded", False):
+                self._build_chapters()
+        for r in getattr(self, "_chapter_rows", []):
+            try:
+                r.configure(bg=COLORS["bg_card"])
+                for child in r.winfo_children():
+                    if isinstance(child, tk.Checkbutton):
+                        child.configure(
+                            bg=COLORS["bg_card"], activebackground=COLORS["bg_hover"],
+                            fg=COLORS["accent"], selectcolor=COLORS["bg_card"]
+                        )
+                    elif isinstance(child, tk.Button):
+                        child.configure(
+                            bg=COLORS["bg_card"],
+                            fg=COLORS.get("rename_btn", "#38BDF8"),
+                            activebackground=COLORS["bg_hover"],
+                            activeforeground=COLORS.get("rename_btn_hover", "#7DD3FC")
+                        )
+                    elif isinstance(child, tk.Label):
+                        child.configure(bg=COLORS["bg_card"])
+            except Exception:
+                pass
         if hasattr(self, "_rename_btn"):
             self._rename_btn.configure(
                 bg=COLORS["bg_card"],
@@ -1777,7 +2112,7 @@ class VideoCard(tk.Frame):
         set_window_icon(dlg)
         dlg.grab_set()
 
-        stem = Path(self.info["filename"]).stem
+        stem = self.info.get("custom_stem") or Path(self.info["filename"]).stem
         self._rename_inst_lbl = tk.Label(
             dlg, text=t("rename.inst"),
             font=FONTS["body"], bg=COLORS["bg_panel"], fg=COLORS["text_secondary"]
@@ -1826,6 +2161,83 @@ class VideoCard(tk.Frame):
 
         dlg.bind("<Return>", lambda e: apply())
         dlg.bind("<Escape>", lambda e: dlg.destroy())
+
+    def _on_rename_chapter(self, c_num: int):
+        """Single-item rename dialog for an individual chapter."""
+        ch = None
+        for item in self.info.get("chapters_data", []):
+            if int(item.get("chapter_number", 1)) == c_num:
+                ch = item
+                break
+        if not ch:
+            return
+
+        dlg = tk.Toplevel(self.winfo_toplevel())
+        dlg.title(t("rename.chapter_title"))
+        dlg.configure(bg=COLORS["bg_panel"])
+        dlg.resizable(False, False)
+        set_window_icon(dlg)
+        dlg.grab_set()
+
+        current_name = ch.get("custom_stem") or ch.get("name") or f"Chapter {c_num:02d}"
+        inst_lbl = tk.Label(
+            dlg, text=t("rename.chapter_inst"),
+            font=FONTS["body"], bg=COLORS["bg_panel"], fg=COLORS["text_secondary"]
+        )
+        inst_lbl.pack(padx=24, pady=(20, 6), anchor="w")
+
+        entry_var = tk.StringVar(value=current_name)
+        entry = tk.Entry(
+            dlg, textvariable=entry_var,
+            font=FONTS["body"], width=36,
+            bg=COLORS["bg_card"], fg=COLORS["text_primary"],
+            insertbackground=COLORS["accent"], relief="flat",
+            bd=6
+        )
+        entry.pack(padx=24, pady=(0, 4))
+        entry.select_range(0, "end")
+        entry.focus_set()
+
+        btn_row = tk.Frame(dlg, bg=COLORS["bg_panel"])
+        btn_row.pack(padx=24, pady=(8, 20), fill="x")
+
+        def apply():
+            new_stem = entry_var.get().strip()
+            if new_stem:
+                clean_stem = sanitize_filename(new_stem, fallback=f"Chapter_{c_num:02d}")
+                ch["custom_stem"] = clean_stem
+                ch["name"] = clean_stem
+                self.update_chapter_name_display(c_num, clean_stem)
+            dlg.destroy()
+
+        apply_btn = tk.Button(
+            btn_row, text=t("rename.apply"),
+            font=FONTS["body"], bg=COLORS["accent"],
+            fg=COLORS["text_primary"], relief="flat", bd=0,
+            padx=20, pady=6, cursor="hand2",
+            command=apply
+        )
+        apply_btn.pack(side="left", padx=(0, 8))
+        cancel_btn = tk.Button(
+            btn_row, text=t("rename.cancel"),
+            font=FONTS["body"], bg=COLORS["bg_card"],
+            fg=COLORS["text_muted"], relief="flat", bd=0,
+            padx=20, pady=6, cursor="hand2",
+            command=dlg.destroy
+        )
+        cancel_btn.pack(side="left")
+
+        dlg.bind("<Return>", lambda e: apply())
+        dlg.bind("<Escape>", lambda e: dlg.destroy())
+
+    def update_chapter_name_display(self, c_num: int, new_name: str):
+        for ch in self.info.get("chapters_data", []):
+            if int(ch.get("chapter_number", 1)) == c_num:
+                ch["custom_stem"] = new_name
+                ch["name"] = new_name
+                break
+        if hasattr(self, "_chapter_name_labels") and c_num in self._chapter_name_labels:
+            self._chapter_name_labels[c_num].configure(text=new_name)
 
     @property
     def selected(self):
@@ -2014,6 +2426,7 @@ class WindowsTaskbarProgress:
 class VCDRipperApp(tk.Tk):
     def __init__(self):
         super().__init__()
+        self.i18n = i18n
         self.title(t('header.title'))
         self.configure(bg=COLORS["bg_dark"])
 
@@ -2025,7 +2438,7 @@ class VCDRipperApp(tk.Tk):
 
         # Explicit AppUserModelID so Windows taskbar uses CompactDisc.ico
         try:
-            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("jjsiew.vcdripperpro.1.3.0")
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(APP_USER_MODEL_ID)
         except Exception:
             pass
 
@@ -2034,18 +2447,29 @@ class VCDRipperApp(tk.Tk):
         self._apply_window_scale()
 
         # State
+        self._source_type      = "NONE"        # "VCD", "DVD", "NONE"
+        self._source_disc_type = ""
         self._videos: list[dict] = []
         self._cards:  list[VideoCard] = []
         self._selected_indices: set[int] = set()
+        self._selected_chapters: set[tuple[int, int]] = set()  # set of (card_idx, chapter_num)
+        self._dvd_rip_mode     = tk.StringVar(value="title")   # "title" or "chapter"
         self._output_folder    = tk.StringVar(value="")
-        self._output_format    = tk.StringVar(value="DAT")
+        self._output_format    = tk.StringVar(value="MP4")
         self._output_mode      = tk.StringVar(value="video")   # "video" or "audio"
         self._audio_format     = tk.StringVar(value="WAV")     # "WAV" or "MP3"
         self._vcd_path         = tk.StringVar(value="")
         self._dat_rename_mp4   = tk.BooleanVar(value=True)   # DAT sub-option: rename to .mp4
         self._use_1080p        = tk.BooleanVar(value=False)  # MP4/MOV resolution: False=original
         self._auto_open_folder = tk.BooleanVar(value=True)   # Auto open folder after rip
+        self._dvd_title_folder_var = tk.BooleanVar(value=False)  # Create folder with DVD title
+        self._dvd_timeline_var = tk.BooleanVar(value=False)  # Generate Chapter Timeline File (.txt)
+        self._dvd_selected_audio_tracks: dict[int, str] = {}  # title_number -> track_id
+        self._active_dvd_title_idx: int = 0
+        self._audio_track_var  = tk.StringVar(value="")
+        self._target_title_var = tk.StringVar(value="")
         self._ripping          = False
+        self._scanning         = False
         self._poll_job         = None
         self._cancel_requested = False
         self._current_proc     = None
@@ -2067,10 +2491,18 @@ class VCDRipperApp(tk.Tk):
 
         # FFmpeg
         self._ffmpeg, self._ffprobe = find_ffmpeg()
+        self._handbrake = dvd_engine.find_handbrake()
+        self._handbrake_version = dvd_engine.get_handbrake_version(self._handbrake) if self._handbrake else None
 
         self._build_ui()
         self._apply_ttk_styles()
         self._start_drive_poll()
+
+        # Log tool status
+        if self._handbrake:
+            self._log.log(f"HandBrakeCLI detected: {self._handbrake_version or self._handbrake}", "success")
+        else:
+            self._log.log("HandBrakeCLI not detected. DVD pipeline will use FFmpeg / IFO backend.", "info")
 
         # App icon — multi-resolution CompactDisc.ico
         self._set_window_icon(self)
@@ -2092,7 +2524,8 @@ class VCDRipperApp(tk.Tk):
         min_w = min(int(round(1100 * s)), screen_w - 60)
         min_h = min(int(round(750 * s)), screen_h - 100)
         self.minsize(min_w, min_h)
-        self.geometry(f"{target_w}x{target_h}")
+        if self.state() != "zoomed":
+            self.geometry(f"{target_w}x{target_h}")
 
     def _on_scale_changed(self, scale_factor):
         apply_font_scale(self, scale_factor)
@@ -2110,7 +2543,7 @@ class VCDRipperApp(tk.Tk):
             self._show_ffmpeg_warning()
 
     def _on_theme_changed(self):
-        self._apply_theme()
+        self._rebuild_ui()
 
     def _apply_theme(self):
         # 1. Root window & Title bar
@@ -2187,9 +2620,10 @@ class VCDRipperApp(tk.Tk):
             self._detect_icon.configure(bg=COLORS["bg_card"])
         if hasattr(self, "_detect_label"):
             d = self._vcd_path.get()
+            fg_col = COLORS["cyan"] if getattr(self, "_videos", None) else (COLORS["success"] if (d and is_vcd_folder(d)) else COLORS["text_muted"])
             self._detect_label.configure(
                 bg=COLORS["bg_card"],
-                fg=COLORS["success"] if (d and is_vcd_folder(d)) else COLORS["text_muted"]
+                fg=fg_col
             )
         if hasattr(self, "_detected_drive_lbl"):
             self._detected_drive_lbl.configure(bg=COLORS["bg_card"], fg=COLORS["accent"])
@@ -2246,6 +2680,12 @@ class VCDRipperApp(tk.Tk):
                 selectcolor=COLORS["bg_dark"], activebackground=COLORS["bg_card"],
                 activeforeground=COLORS["success"]
             )
+        if hasattr(self, "_both_mode_rb"):
+            self._both_mode_rb.configure(
+                bg=COLORS["bg_card"], fg=COLORS["warning"],
+                selectcolor=COLORS["bg_dark"], activebackground=COLORS["bg_card"],
+                activeforeground=COLORS["warning"]
+            )
 
         if hasattr(self, "_fmt_container"):
             self._fmt_container.configure(bg=COLORS["bg_panel"])
@@ -2297,6 +2737,21 @@ class VCDRipperApp(tk.Tk):
                 selectcolor=COLORS["bg_panel"], activebackground=COLORS["bg_card"]
             )
 
+        if hasattr(self, "_audio_track_panel"):
+            self._audio_track_panel.configure(bg=COLORS["bg_panel"])
+        if hasattr(self, "_audio_track_lbl"):
+            self._audio_track_lbl.configure(bg=COLORS["bg_panel"], fg=COLORS["text_secondary"])
+        if hasattr(self, "_audio_track_card"):
+            self._audio_track_card.configure(bg=COLORS["bg_card"], highlightbackground=COLORS["border"])
+        if hasattr(self, "_audio_track_title_frame"):
+            self._audio_track_title_frame.configure(bg=COLORS["bg_card"])
+        if hasattr(self, "_target_title_lbl"):
+            self._target_title_lbl.configure(bg=COLORS["bg_card"], fg=COLORS["text_secondary"])
+        if hasattr(self, "_audio_track_cb_frame"):
+            self._audio_track_cb_frame.configure(bg=COLORS["bg_card"])
+        if hasattr(self, "_audio_track_detail_lbl"):
+            self._audio_track_detail_lbl.configure(bg=COLORS["bg_card"], fg=COLORS["text_secondary"])
+
         if hasattr(self, "_audio_panel"):
             self._audio_panel.configure(bg=COLORS["bg_panel"])
         if hasattr(self, "_audio_fmt_lbl"):
@@ -2311,6 +2766,9 @@ class VCDRipperApp(tk.Tk):
             )
             item["lbl"].configure(bg=COLORS["bg_card"], fg=COLORS["text_secondary"])
 
+        if hasattr(self, "_update_format_greyout"):
+            self._update_format_greyout()
+
         if hasattr(self, "_right_sep"):
             self._right_sep.configure(bg=COLORS["border"])
         if hasattr(self, "_output_section_lbl"):
@@ -2319,8 +2777,18 @@ class VCDRipperApp(tk.Tk):
             self._choose_folder_btn.apply_theme()
         if hasattr(self, "_out_lbl"):
             self._out_lbl.configure(bg=COLORS["bg_panel"], fg=COLORS["text_muted"])
+        if hasattr(self, "_dvd_title_folder_chk"):
+            self._dvd_title_folder_chk.configure(
+                bg=COLORS["bg_panel"], fg=COLORS["text_primary"],
+                selectcolor=COLORS["bg_dark"], activebackground=COLORS["bg_panel"]
+            )
         if hasattr(self, "_auto_open_chk"):
             self._auto_open_chk.configure(
+                bg=COLORS["bg_panel"], fg=COLORS["text_primary"],
+                selectcolor=COLORS["bg_dark"], activebackground=COLORS["bg_panel"]
+            )
+        if hasattr(self, "_dvd_timeline_chk"):
+            self._dvd_timeline_chk.configure(
                 bg=COLORS["bg_panel"], fg=COLORS["text_primary"],
                 selectcolor=COLORS["bg_dark"], activebackground=COLORS["bg_panel"]
             )
@@ -2393,6 +2861,21 @@ class VCDRipperApp(tk.Tk):
                 self._about_dialog.update_theme()
 
     def _rebuild_ui(self):
+        # Cancel any pending configure debounce jobs
+        for job_attr in ("_canvas_resize_job", "_list_cfg_job", "_left_content_job", "_right_content_job"):
+            job = getattr(self, job_attr, None)
+            if job:
+                try:
+                    self.after_cancel(job)
+                except Exception:
+                    pass
+                setattr(self, job_attr, None)
+
+        # Clear cached canvas dimensions so newly built widgets configure cleanly
+        self._last_canvas_width = None
+        self._last_left_canvas_w = None
+        self._last_right_canvas_w = None
+
         # Save log contents
         log_text = ""
         if hasattr(self, '_log') and hasattr(self._log, '_text'):
@@ -2408,13 +2891,21 @@ class VCDRipperApp(tk.Tk):
             self._log_window.destroy()
 
         # Destroy all direct child widgets of root (preserving _about_dialog if open)
-        for child in self.winfo_children():
+        for child in list(self.winfo_children()):
             if hasattr(self, "_about_dialog") and self._about_dialog and child == self._about_dialog:
                 continue
-            child.destroy()
+            try:
+                child.destroy()
+            except Exception:
+                pass
 
-        # Set root window background
+        # Set root window background and native titlebar mode
         self.configure(bg=COLORS["bg_dark"])
+        try:
+            hwnd = ctypes.windll.user32.GetAncestor(self.winfo_id(), 2) or self.winfo_id()
+            set_window_dark_mode(hwnd, i18n.get_effective_theme() == "dark")
+        except Exception:
+            pass
 
         # Re-build UI
         self._build_ui()
@@ -2442,7 +2933,8 @@ class VCDRipperApp(tk.Tk):
             for i, info in enumerate(self._videos):
                 card = VideoCard(
                     self._list_frame, info, i,
-                    on_toggle=self._on_card_toggle
+                    on_toggle=self._on_card_toggle,
+                    on_chapter_toggle=self._on_chapter_toggle
                 )
                 card.pack(fill="x", padx=4, pady=3)
                 self._cards.append(card)
@@ -2451,7 +2943,14 @@ class VCDRipperApp(tk.Tk):
                 if idx < len(self._cards):
                     self._cards[idx].set_selected(True)
                     self._selected_indices.add(idx)
+
+            for (c_idx, c_num) in self._selected_chapters:
+                if c_idx < len(self._cards):
+                    self._cards[c_idx].set_chapter_selected(c_num, True)
+
             self._update_sel_count()
+            self._update_format_visibility_for_source()
+            self._update_audio_track_selector()
         else:
             self._clear_list()
             if hasattr(self, "_empty_frame") and self._empty_frame.winfo_exists():
@@ -2460,14 +2959,30 @@ class VCDRipperApp(tk.Tk):
         # Refresh all localized text & drive status
         self._refresh_ui()
 
-        # Update about dialog scale if open
+        # Update about dialog if open
         if hasattr(self, "_about_dialog") and self._about_dialog and self._about_dialog.winfo_exists():
+            if hasattr(self._about_dialog, "update_theme"):
+                try:
+                    self._about_dialog.update_theme()
+                except Exception:
+                    pass
             if hasattr(self._about_dialog, "update_scale"):
-                self._about_dialog.update_scale()
-            self._about_dialog.lift()
+                try:
+                    self._about_dialog.update_scale()
+                except Exception:
+                    pass
+            try:
+                self._about_dialog.lift()
+            except Exception:
+                pass
 
     # ── UI Construction ──────────────────────
     def _build_ui(self):
+        # Reset cached widths on UI construction so all canvases initialize their window item widths cleanly
+        self._last_canvas_width = None
+        self._last_left_canvas_w = None
+        self._last_right_canvas_w = None
+
         # ── Header bar ──────────────────────
         self._header = tk.Frame(self, bg=COLORS["bg_panel"], height=scale_val(68))
         self._header.pack(fill="x", side="top")
@@ -2598,18 +3113,30 @@ class VCDRipperApp(tk.Tk):
         self._left_content = tk.Frame(self._left_canvas, bg=COLORS["bg_panel"])
         left_window = self._left_canvas.create_window((0, 0), window=self._left_content, anchor="nw")
 
-        self._left_content.bind("<Configure>", lambda e: self._left_canvas.configure(scrollregion=self._left_canvas.bbox("all")))
-        self._left_canvas.bind("<Configure>", lambda e: self._left_canvas.itemconfig(left_window, width=e.width))
+        def _on_left_canvas_cfg(e):
+            try:
+                cur_item_w = int(float(self._left_canvas.itemcget(left_window, "width")))
+            except Exception:
+                cur_item_w = 0
+            if getattr(self, "_last_left_canvas_w", None) != e.width or cur_item_w != e.width:
+                self._last_left_canvas_w = e.width
+                self._left_canvas.itemconfig(left_window, width=e.width)
+        self._left_canvas.bind("<Configure>", _on_left_canvas_cfg)
+
+        def _on_left_content_cfg(e):
+            if getattr(self, "_left_content_job", None):
+                try:
+                    self.after_cancel(self._left_content_job)
+                except Exception:
+                    pass
+            self._left_content_job = self.after(20, lambda: self._left_canvas.configure(scrollregion=self._left_canvas.bbox("all")) if hasattr(self, "_left_canvas") and self._left_canvas.winfo_exists() else None)
+        self._left_content.bind("<Configure>", _on_left_content_cfg)
         self._left_canvas._can_scroll = True
         self._left_canvas.pack(side="left", fill="both", expand=True)
         self._build_left_sidebar(self._left_content)
 
-        # ── Center content area (VCD Tracks) ──
-        self._content_container = tk.Frame(top_frame, bg=COLORS["bg_dark"])
-        self._content_container.pack(side="left", fill="both", expand=True)
-        self._build_content(self._content_container)
-
         # ── Right sidebar (Output Format, Output Folder, Rip Controls) ──
+        # Pinned to side="right" before center container so it is strictly anchored to the window's right border
         self._right_sidebar = tk.Frame(top_frame, bg=COLORS["bg_panel"], width=scale_val(420))
         self._right_sidebar.pack(side="right", fill="y")
         self._right_sidebar.pack_propagate(False)
@@ -2644,15 +3171,37 @@ class VCDRipperApp(tk.Tk):
         self._right_content = tk.Frame(self._right_canvas, bg=COLORS["bg_panel"])
         right_window = self._right_canvas.create_window((0, 0), window=self._right_content, anchor="nw")
 
-        self._right_content.bind("<Configure>", lambda e: self._right_canvas.configure(scrollregion=self._right_canvas.bbox("all")))
-        self._right_canvas.bind("<Configure>", lambda e: self._right_canvas.itemconfig(right_window, width=e.width))
+        def _on_right_canvas_cfg(e):
+            try:
+                cur_item_w = int(float(self._right_canvas.itemcget(right_window, "width")))
+            except Exception:
+                cur_item_w = 0
+            if getattr(self, "_last_right_canvas_w", None) != e.width or cur_item_w != e.width:
+                self._last_right_canvas_w = e.width
+                self._right_canvas.itemconfig(right_window, width=e.width)
+        self._right_canvas.bind("<Configure>", _on_right_canvas_cfg)
+
+        def _on_right_content_cfg(e):
+            if getattr(self, "_right_content_job", None):
+                try:
+                    self.after_cancel(self._right_content_job)
+                except Exception:
+                    pass
+            self._right_content_job = self.after(20, lambda: self._right_canvas.configure(scrollregion=self._right_canvas.bbox("all")) if hasattr(self, "_right_canvas") and self._right_canvas.winfo_exists() else None)
+        self._right_content.bind("<Configure>", _on_right_content_cfg)
         self._right_canvas._can_scroll = True
         self._right_canvas.pack(side="left", fill="both", expand=True)
         self._build_right_sidebar(self._right_content)
 
+        # ── Center content area (VCD Tracks) ──
+        # Absorbs all remaining space between left and right sidebars dynamically
+        self._content_container = tk.Frame(top_frame, bg=COLORS["bg_dark"])
+        self._content_container.pack(side="left", fill="both", expand=True)
+        self._build_content(self._content_container)
+
         # ── Console Log (popup window) ───────────────
         self._log_window = tk.Toplevel(self)
-        self._log_window.title("Console Log — VCD Ripper Pro")
+        self._log_window.title(f"Console Log — {APP_NAME}")
         self._log_window.configure(bg=COLORS["bg_dark"])
         self._log_window.geometry(f"{scale_val(700)}x{scale_val(400)}")
         self._log_window.protocol("WM_DELETE_WINDOW", self._log_window.withdraw)
@@ -2729,7 +3278,7 @@ class VCDRipperApp(tk.Tk):
         self._scan_btn = FlatButton(
             parent, text=t('source.scan'),
             icon="🔍",
-            style="primary", command=self._scan_vcd
+            style="primary", command=self._scan_disc
         )
         self._scan_btn.pack(fill="x", padx=20, pady=(8, 0))
 
@@ -2755,7 +3304,7 @@ class VCDRipperApp(tk.Tk):
 
         self._sel_all_btn = FlatButton(
             sel_row, text=t('selection.all'),
-            icon="☑",
+            icon="☐",
             style="ghost", command=self._select_all
         )
         self._sel_all_btn.pack(side="left", fill="x", expand=True, padx=(0, 6))
@@ -2798,7 +3347,7 @@ class VCDRipperApp(tk.Tk):
             cursor="hand2",
             command=self._on_mode_change
         )
-        self._video_mode_rb.pack(anchor="w", padx=16, pady=8)
+        self._video_mode_rb.pack(anchor="w", padx=16, pady=(8, 4))
 
         self._audio_mode_rb = tk.Radiobutton(
             mode_card, text=t('format.audio_mode'),
@@ -2811,7 +3360,20 @@ class VCDRipperApp(tk.Tk):
             cursor="hand2",
             command=self._on_mode_change
         )
-        self._audio_mode_rb.pack(anchor="w", padx=16, pady=(0, 8))
+        self._audio_mode_rb.pack(anchor="w", padx=16, pady=(0, 4))
+
+        self._both_mode_rb = tk.Radiobutton(
+            mode_card, text=t('format.both_mode'),
+            variable=self._output_mode, value="both",
+            font=FONTS["small_bold"],
+            bg=COLORS["bg_card"], fg=COLORS["warning"],
+            selectcolor=COLORS["bg_dark"],
+            activebackground=COLORS["bg_card"],
+            activeforeground=COLORS["warning"],
+            cursor="hand2",
+            command=self._on_mode_change
+        )
+        self._both_mode_rb.pack(anchor="w", padx=16, pady=(0, 8))
 
         # ── Format options container (holds video_panel & audio_panel) ──
         self._fmt_container = tk.Frame(parent, bg=COLORS["bg_panel"])
@@ -2864,7 +3426,7 @@ class VCDRipperApp(tk.Tk):
             )
             desc_lbl.pack(anchor="w", padx=(28, 0), pady=(1, 0))
             self._fmt_desc_lbls[fmt] = desc_lbl
-            self._fmt_items.append({"frame": item_frame, "rb": rb, "lbl": desc_lbl})
+            self._fmt_items.append({"fmt": fmt, "frame": item_frame, "rb": rb, "lbl": desc_lbl})
 
         # DAT sub-option
         self._dat_suboption_frame = tk.Frame(self._video_panel, bg=COLORS["bg_card"],
@@ -2942,9 +3504,74 @@ class VCDRipperApp(tk.Tk):
         )
         self._res_1080p_rb.pack(anchor="w", pady=(6, 0))
 
-        # ── Audio Only sub-panel ─────────────
+        # ── DVD Audio Track sub-panel ─────────────
+        self._audio_track_panel = tk.Frame(self._fmt_container, bg=COLORS["bg_panel"])
+        # (Packed dynamically in _update_format_visibility_for_source before _audio_panel for DVD sources)
+
+        self._audio_track_lbl = tk.Label(
+            self._audio_track_panel, text=t('format.audio_track_lbl'),
+            font=FONTS["small_bold"], bg=COLORS["bg_panel"],
+            fg=COLORS["text_secondary"]
+        )
+        self._audio_track_lbl.pack(anchor="w", padx=20, pady=(8, 4))
+
+        self._audio_track_card = tk.Frame(
+            self._audio_track_panel, bg=COLORS["bg_card"],
+            highlightbackground=COLORS["border"],
+            highlightthickness=1
+        )
+        self._audio_track_card.pack(fill="x", padx=20, pady=(0, 4))
+
+        # Title switcher row (displayed when multiple DVD titles exist)
+        self._audio_track_title_frame = tk.Frame(self._audio_track_card, bg=COLORS["bg_card"])
+        self._audio_track_title_frame.pack(fill="x", padx=12, pady=(8, 4))
+
+        self._target_title_lbl = tk.Label(
+            self._audio_track_title_frame, text=t('format.target_title_lbl'),
+            font=FONTS["tiny"], bg=COLORS["bg_card"],
+            fg=COLORS["text_secondary"]
+        )
+        self._target_title_lbl.pack(anchor="w")
+
+        self._target_title_cb = ttk.Combobox(
+            self._audio_track_title_frame,
+            textvariable=self._target_title_var,
+            state="readonly",
+            style="AudioTrack.TCombobox",
+            font=FONTS["small"]
+        )
+        self._target_title_cb.pack(fill="x", pady=(2, 0))
+        self._target_title_cb.bind("<<ComboboxSelected>>", self._on_audio_track_title_changed)
+
+        # Track combobox frame
+        self._audio_track_cb_frame = tk.Frame(self._audio_track_card, bg=COLORS["bg_card"])
+        self._audio_track_cb_frame.pack(fill="x", padx=12, pady=(4, 6))
+
+        self._audio_track_cb = ttk.Combobox(
+            self._audio_track_cb_frame,
+            textvariable=self._audio_track_var,
+            state="readonly",
+            style="AudioTrack.TCombobox",
+            font=FONTS["small"]
+        )
+        self._audio_track_cb.pack(fill="x")
+        self._audio_track_cb.bind("<<ComboboxSelected>>", self._on_audio_track_selected)
+
+        # Track metadata details label
+        self._audio_track_detail_lbl = tk.Label(
+            self._audio_track_card,
+            text="",
+            font=FONTS["tiny"],
+            bg=COLORS["bg_card"],
+            fg=COLORS["text_secondary"],
+            justify="left",
+            wraplength=scale_val(220)
+        )
+        self._audio_track_detail_lbl.pack(anchor="w", padx=12, pady=(0, 8))
+
+        # ── Audio sub-panel ──────────────────
         self._audio_panel = tk.Frame(self._fmt_container, bg=COLORS["bg_panel"])
-        # not packed by default (video is active)
+        self._audio_panel.pack(fill="x", padx=0, pady=(6, 0))
 
         self._audio_fmt_lbl = tk.Label(
             self._audio_panel, text=t('format.audio_lbl'),
@@ -2989,7 +3616,7 @@ class VCDRipperApp(tk.Tk):
             )
             adesc_lbl.pack(anchor="w", padx=(28, 0), pady=(1, 0))
             self._audio_desc_lbls[afmt] = adesc_lbl
-            self._audio_items.append({"frame": aitem_frame, "rb": arb, "lbl": adesc_lbl})
+            self._audio_items.append({"fmt": afmt, "frame": aitem_frame, "rb": arb, "lbl": adesc_lbl})
 
         # ── Separator ───────────────────────
         self._right_sep = tk.Frame(parent, bg=COLORS["border"], height=1)
@@ -3013,6 +3640,17 @@ class VCDRipperApp(tk.Tk):
         )
         self._out_lbl.pack(fill="x", padx=20, pady=(6, 4))
 
+        self._dvd_title_folder_chk = tk.Checkbutton(
+            parent, text=t('output.dvd_title_folder'),
+            variable=self._dvd_title_folder_var,
+            font=FONTS["small"], bg=COLORS["bg_panel"],
+            fg=COLORS["text_primary"],
+            selectcolor=COLORS["bg_dark"],
+            activebackground=COLORS["bg_panel"],
+            cursor="hand2", relief="flat", bd=0
+        )
+        # Note: _dvd_title_folder_chk is packed dynamically above _auto_open_chk for DVD sources only
+
         self._auto_open_chk = tk.Checkbutton(
             parent, text=t('output.auto_open'),
             variable=self._auto_open_folder,
@@ -3023,6 +3661,20 @@ class VCDRipperApp(tk.Tk):
             cursor="hand2", relief="flat", bd=0
         )
         self._auto_open_chk.pack(anchor="w", padx=20, pady=(4, 12))
+
+        self._dvd_timeline_chk = tk.Checkbutton(
+            parent, text=t('output.dvd_timeline'),
+            variable=self._dvd_timeline_var,
+            font=FONTS["small"], bg=COLORS["bg_panel"],
+            fg=COLORS["text_primary"],
+            selectcolor=COLORS["bg_dark"],
+            activebackground=COLORS["bg_panel"],
+            cursor="hand2", relief="flat", bd=0
+        )
+        # Note: _dvd_timeline_chk is packed dynamically below _auto_open_chk for DVD sources only
+
+        # Apply initial greyout/enable state after all widgets are created
+        self._update_format_greyout()
 
     def _build_content(self, parent):
         # ── Title bar ───────────────────────
@@ -3044,6 +3696,7 @@ class VCDRipperApp(tk.Tk):
             fg=COLORS["text_primary"], padx=10, pady=4
         )
         self._video_count_badge.pack(side="left", pady=16)
+
 
         # ── Scrollable video list ─────────────
         self._list_container = tk.Frame(parent, bg=COLORS["bg_dark"])
@@ -3185,6 +3838,32 @@ class VCDRipperApp(tk.Tk):
             bordercolor=COLORS["bg_dark"],
             arrowcolor=COLORS["text_muted"]
         )
+        style.configure(
+            "AudioTrack.TCombobox",
+            fieldbackground=COLORS["bg_card"],
+            background=COLORS["bg_card"],
+            foreground=COLORS["text_primary"],
+            darkcolor=COLORS["border"],
+            lightcolor=COLORS["border"],
+            bordercolor=COLORS["border"],
+            arrowcolor=COLORS["accent"],
+            padding=scale_val(4)
+        )
+        style.map(
+            "AudioTrack.TCombobox",
+            fieldbackground=[("readonly", COLORS["bg_card"]), ("disabled", COLORS["bg_dark"])],
+            foreground=[("readonly", COLORS["text_primary"]), ("disabled", COLORS["text_muted"])],
+            selectbackground=[("readonly", COLORS["accent_dim"])],
+            selectforeground=[("readonly", COLORS["accent"])],
+        )
+        try:
+            self.option_add("*TCombobox*Listbox.background", COLORS["bg_card"])
+            self.option_add("*TCombobox*Listbox.foreground", COLORS["text_primary"])
+            self.option_add("*TCombobox*Listbox.selectBackground", COLORS["accent_dim"])
+            self.option_add("*TCombobox*Listbox.selectForeground", COLORS["accent"])
+            self.option_add("*TCombobox*Listbox.font", FONTS["small"])
+        except Exception:
+            pass
 
     # ── Drive polling ─────────────────────────
     def _start_drive_poll(self):
@@ -3199,7 +3878,7 @@ class VCDRipperApp(tk.Tk):
                 pass
             self._poll_job = None
 
-        if getattr(self, "_poll_in_flight", False) or self._ripping:
+        if getattr(self, "_poll_in_flight", False) or self._ripping or getattr(self, "_scanning", False):
             self._poll_job = self.after(3000, self._poll_drives)
             return
 
@@ -3209,13 +3888,16 @@ class VCDRipperApp(tk.Tk):
             try:
                 drives = get_cd_drives()
                 vcd_drives = []
+                dvd_drives = []
                 non_vcd_drives = []
                 if drives:
                     for d in drives:
-                        check = is_vcd_disc(d)
-                        if check.is_vcd:
+                        check = disc_detector.detect_disc(d)
+                        if check.is_dvd:
+                            dvd_drives.append((d, check))
+                        elif check.is_vcd:
                             vcd_drives.append((d, check))
-                        elif check.disc_type not in ("No Disc", "Empty Disc", "Unreadable Disc"):
+                        elif check.disc_type not in ("No Disc", "Empty Disc", "Empty Drive", "Unreadable Disc"):
                             non_vcd_drives.append((d, check))
 
                 theme_changed = False
@@ -3226,61 +3908,294 @@ class VCDRipperApp(tk.Tk):
                     if COLORS["bg_dark"] != expected_bg:
                         theme_changed = True
 
-                self.after(0, lambda: self._apply_poll_results(drives, vcd_drives, non_vcd_drives, theme_changed, current_effective))
+                self.after(0, lambda: self._apply_poll_results(drives, vcd_drives, dvd_drives, non_vcd_drives, theme_changed, current_effective))
             except Exception:
                 pass
             finally:
                 self._poll_in_flight = False
-                self.after(0, lambda: setattr(self, "_poll_job", self.after(3000, self._poll_drives)))
+                try:
+                    self.after(0, lambda: setattr(self, "_poll_job", self.after(3000, self._poll_drives)))
+                except Exception:
+                    pass
 
         threading.Thread(target=_bg_poll, daemon=True).start()
 
-    def _apply_poll_results(self, drives, vcd_drives, non_vcd_drives, theme_changed, current_effective):
-        if self._ripping:
+    def _update_format_visibility_for_source(self):
+        """Dynamically configure format options based on current source (VCD vs DVD)."""
+        if not hasattr(self, "_fmt_items") or not self._fmt_items:
+            return
+        video_active = (self._output_mode.get() in ("video", "both"))
+
+        if self._source_type == "DVD":
+            for item in self._fmt_items:
+                if item.get("fmt") == "DAT":
+                    item["frame"].pack_forget()
+            if self._output_format.get() == "DAT":
+                self._output_format.set("MP4")
+            if hasattr(self, "_dat_suboption_frame"):
+                self._dat_suboption_frame.pack_forget()
+            if hasattr(self, "_res_suboption_frame"):
+                if self._output_format.get() in ("MP4", "MOV"):
+                    self._res_suboption_frame.pack(fill="x", padx=20, pady=(6, 0))
+                else:
+                    self._res_suboption_frame.pack_forget()
+            if hasattr(self, "_scan_btn"):
+                self._scan_btn.set_text(t('source.scan'), icon="🔍")
+        else:
+            for item in self._fmt_items:
+                item["frame"].pack_forget()
+            for idx, item in enumerate(self._fmt_items):
+                item["frame"].pack(fill="x", padx=14, pady=(6 if idx == 0 else 4, 6))
+            if hasattr(self, "_dat_suboption_frame"):
+                if self._output_format.get() == "DAT":
+                    self._dat_suboption_frame.pack(fill="x", padx=20, pady=(6, 0))
+                else:
+                    self._dat_suboption_frame.pack_forget()
+            if hasattr(self, "_res_suboption_frame"):
+                if self._output_format.get() in ("MP4", "MOV"):
+                    self._res_suboption_frame.pack(fill="x", padx=20, pady=(6, 0))
+                else:
+                    self._res_suboption_frame.pack_forget()
+            if hasattr(self, "_scan_btn"):
+                self._scan_btn.set_text(t('source.scan_vcd') if self._source_type == "VCD" else t('source.scan'), icon="🔍")
+
+        # DVD audio track panel and DVD title subfolder option are strictly visible only for DVD sources
+        is_dvd = (self._source_type == "DVD") or any(v.get("disc_type") == "DVD" for v in getattr(self, "_videos", []))
+        if (hasattr(self, "_audio_track_panel") and self._audio_track_panel.winfo_exists()
+            and hasattr(self, "_audio_panel") and self._audio_panel.winfo_exists()):
+            if is_dvd:
+                self._audio_track_panel.pack(before=self._audio_panel, fill="x", padx=0, pady=(6, 0))
+                self._update_audio_track_selector()
+            else:
+                self._audio_track_panel.pack_forget()
+
+        if (hasattr(self, "_dvd_title_folder_chk") and self._dvd_title_folder_chk.winfo_exists()
+            and hasattr(self, "_auto_open_chk") and self._auto_open_chk.winfo_exists()):
+            if is_dvd:
+                self._dvd_title_folder_chk.pack(before=self._auto_open_chk, anchor="w", padx=20, pady=(4, 2))
+                self._auto_open_chk.pack_configure(pady=(2, 2))
+                if hasattr(self, "_dvd_timeline_chk") and self._dvd_timeline_chk.winfo_exists():
+                    self._dvd_timeline_chk.pack(after=self._auto_open_chk, anchor="w", padx=20, pady=(2, 12))
+            else:
+                self._dvd_title_folder_chk.pack_forget()
+                if hasattr(self, "_dvd_timeline_chk") and self._dvd_timeline_chk.winfo_exists():
+                    self._dvd_timeline_chk.pack_forget()
+                self._auto_open_chk.pack_configure(pady=(4, 12))
+
+    def _update_audio_track_selector(self):
+        """Populate the Audio Track selector based on the active DVD title and its audio tracks."""
+        if not hasattr(self, "_audio_track_cb"):
             return
 
-        if vcd_drives:
-            drive, check = vcd_drives[0]
+        is_dvd = (self._source_type == "DVD") or any(v.get("disc_type") == "DVD" for v in getattr(self, "_videos", []))
+        if not is_dvd or not getattr(self, "_videos", []):
+            self._audio_track_cb.configure(state="disabled", values=[])
+            self._audio_track_var.set("")
+            if hasattr(self, "_audio_track_detail_lbl"):
+                self._audio_track_detail_lbl.configure(text="")
+            return
+
+        if self._active_dvd_title_idx >= len(self._videos):
+            self._active_dvd_title_idx = 0
+
+        # Update Target Title combobox
+        title_names = []
+        for idx, v in enumerate(self._videos):
+            t_num = v.get("title_number", idx + 1)
+            t_name = v.get("filename") or f"Title {t_num:02d}"
+            title_names.append(t_name)
+
+        self._target_title_cb.configure(values=title_names)
+        if 0 <= self._active_dvd_title_idx < len(title_names):
+            self._target_title_var.set(title_names[self._active_dvd_title_idx])
+
+        if len(self._videos) <= 1:
+            self._audio_track_title_frame.pack_forget()
+        else:
+            self._audio_track_title_frame.pack(fill="x", padx=12, pady=(8, 4), before=self._audio_track_cb_frame)
+
+        active_title = self._videos[self._active_dvd_title_idx]
+        title_num = active_title.get("title_number", self._active_dvd_title_idx + 1)
+        raw_tracks = active_title.get("audio_tracks", [])
+
+        # If audio_tracks is empty, normalize from audio_streams if available
+        if not raw_tracks and active_title.get("audio_streams"):
+            raw_tracks = []
+            for a_i, a_st in enumerate(active_title["audio_streams"]):
+                trk = dvd_engine.normalize_audio_track(
+                    title_number=title_num,
+                    track_number=a_i + 1,
+                    stream_index=a_i,
+                    raw_codec=a_st.get("format", "AC3"),
+                    raw_channels=a_st.get("channels", "2.0"),
+                    raw_lang=a_st.get("lang", "und"),
+                    raw_lang_name=a_st.get("lang_name"),
+                    hb_track_index=a_i + 1,
+                    ffmpeg_stream_index=a_i
+                )
+                raw_tracks.append(trk.to_dict())
+            active_title["audio_tracks"] = raw_tracks
+
+        if not raw_tracks:
+            no_trk_text = t('format.no_audio_tracks')
+            self._audio_track_cb.configure(values=[no_trk_text], state="disabled")
+            self._audio_track_var.set(no_trk_text)
+            self._audio_track_detail_lbl.configure(text=no_trk_text, fg=COLORS["text_muted"])
+            return
+
+        track_labels = []
+        track_map = {}
+        for t_item in raw_tracks:
+            t_dict = t_item.to_dict() if isinstance(t_item, dvd_engine.DVDAudioTrack) else t_item
+            label = t_dict.get("display_label")
+            if not label:
+                trk_obj = dvd_engine.normalize_audio_track(
+                    title_number=t_dict.get("title_number", title_num),
+                    track_number=t_dict.get("track_number", 1),
+                    stream_index=t_dict.get("stream_index", 0),
+                    raw_codec=t_dict.get("codec") or t_dict.get("format", "AC-3"),
+                    raw_channels=t_dict.get("channels", "Stereo"),
+                    raw_lang=t_dict.get("lang") or t_dict.get("lang_code", "und"),
+                    raw_lang_name=t_dict.get("lang_name"),
+                    hb_track_index=t_dict.get("hb_track_index", 1),
+                    ffmpeg_stream_index=t_dict.get("ffmpeg_stream_index", 0),
+                )
+                label = trk_obj.display_label()
+                t_dict["display_label"] = label
+            track_labels.append(label)
+            track_map[label] = t_dict
+
+        self._audio_track_cb.configure(values=track_labels, state="readonly")
+
+        selected_id = self._dvd_selected_audio_tracks.get(title_num)
+        selected_label = None
+        if selected_id:
+            for lbl, t_dict in track_map.items():
+                if t_dict.get("track_id") == selected_id:
+                    selected_label = lbl
+                    break
+
+        if not selected_label:
+            selected_label = track_labels[0]
+            chosen_track = track_map[selected_label]
+            self._dvd_selected_audio_tracks[title_num] = chosen_track.get("track_id", f"T{title_num:02d}_A01")
+
+        self._audio_track_var.set(selected_label)
+        curr_track = track_map[selected_label]
+
+        details = []
+        c = curr_track.get("codec") or curr_track.get("format")
+        if c:
+            details.append(f"Codec: {c}")
+        ch = curr_track.get("channels")
+        if ch:
+            details.append(f"Channels: {ch}")
+        sr = curr_track.get("sample_rate")
+        if sr:
+            details.append(f"{sr} Hz")
+        br = curr_track.get("bitrate")
+        if br and br > 0:
+            details.append(f"{round(br/1000)} kbps")
+        self._audio_track_detail_lbl.configure(
+            text=" | ".join(details) if details else "",
+            fg=COLORS["text_secondary"]
+        )
+
+    def _on_audio_track_selected(self, event=None):
+        """User selected a different audio track in the combobox."""
+        if not getattr(self, "_videos", []) or self._active_dvd_title_idx >= len(self._videos):
+            return
+        active_title = self._videos[self._active_dvd_title_idx]
+        title_num = active_title.get("title_number", self._active_dvd_title_idx + 1)
+        raw_tracks = active_title.get("audio_tracks", [])
+        chosen_label = self._audio_track_var.get()
+
+        for t_item in raw_tracks:
+            t_dict = t_item.to_dict() if isinstance(t_item, dvd_engine.DVDAudioTrack) else t_item
+            if t_dict.get("display_label") == chosen_label:
+                self._dvd_selected_audio_tracks[title_num] = t_dict.get("track_id", f"T{title_num:02d}_A01")
+                details = []
+                c = t_dict.get("codec") or t_dict.get("format")
+                if c:
+                    details.append(f"Codec: {c}")
+                ch = t_dict.get("channels")
+                if ch:
+                    details.append(f"Channels: {ch}")
+                sr = t_dict.get("sample_rate")
+                if sr:
+                    details.append(f"{sr} Hz")
+                br = t_dict.get("bitrate")
+                if br and br > 0:
+                    details.append(f"{round(br/1000)} kbps")
+                self._audio_track_detail_lbl.configure(
+                    text=" | ".join(details) if details else "",
+                    fg=COLORS["text_secondary"]
+                )
+                self._log.log(f"Selected audio track for Title {title_num}: {chosen_label}", "info")
+                break
+
+    def _on_audio_track_title_changed(self, event=None):
+        """User selected a different DVD title from the Target Title dropdown."""
+        idx = self._target_title_cb.current()
+        if 0 <= idx < len(getattr(self, "_videos", [])):
+            self._active_dvd_title_idx = idx
+            self._update_audio_track_selector()
+
+    def _apply_poll_results(self, drives, vcd_drives, dvd_drives, non_vcd_drives, theme_changed, current_effective):
+        if self._ripping or getattr(self, "_scanning", False):
+            return
+
+        if dvd_drives:
+            drive, check = dvd_drives[0]
             self._last_non_vcd_drive = None
-            if self._vcd_path.get() != drive:
+            if self._vcd_path.get() != drive or self._source_type != "DVD":
+                self._source_type = "DVD"
                 self._vcd_path.set(drive)
                 vol_name = get_volume_label(drive)
-                if vol_name:
-                    self._batch_base_name = vol_name
+                self._batch_base_name = vol_name if vol_name else "Title"
                 self._detected_drive_lbl.configure(text=t('drive.drive_label').format(drive=drive[0]))
-                self._detect_label.configure(
-                    text=t('drive.detect_vcd'), fg=COLORS["success"]
-                )
-                self._drive_lbl.configure(
-                    text=t('header.vcd_on').format(drive=drive[0]),
-                    fg=COLORS["success"]
-                )
+                self._detect_label.configure(text=t('drive.detect_dvd'), fg=COLORS["success"])
+                self._drive_lbl.configure(text=t('header.dvd_on').format(drive=drive[0]), fg=COLORS["success"])
+                self._update_format_visibility_for_source()
+                log_text = f"{drive} [{vol_name}]" if vol_name else drive
+                self._log.log(t('log.dvd_auto').format(drive=log_text), "success")
+                self.after(500, self._scan_disc)
+        elif vcd_drives:
+            drive, check = vcd_drives[0]
+            self._last_non_vcd_drive = None
+            if self._vcd_path.get() != drive or self._source_type != "VCD":
+                self._source_type = "VCD"
+                self._vcd_path.set(drive)
+                vol_name = get_volume_label(drive)
+                self._batch_base_name = vol_name if vol_name else "Track"
+                self._detected_drive_lbl.configure(text=t('drive.drive_label').format(drive=drive[0]))
+                self._detect_label.configure(text=t('drive.detect_vcd'), fg=COLORS["success"])
+                self._drive_lbl.configure(text=t('header.vcd_on').format(drive=drive[0]), fg=COLORS["success"])
+                self._update_format_visibility_for_source()
                 log_text = f"{drive} [{vol_name}]" if vol_name else drive
                 self._log.log(t('log.vcd_auto').format(drive=log_text), "success")
-                self.after(500, self._scan_vcd)  # Auto-scan after short delay
+                self.after(500, self._scan_disc)
         elif non_vcd_drives:
             drive, check = non_vcd_drives[0]
+            self._source_type = "NONE"
+            self._update_format_visibility_for_source()
             self._drive_lbl.configure(
                 text=f"💿  {drive[0]}: ({check.disc_type})",
                 fg=COLORS["warning"]
             )
             self._detected_drive_lbl.configure(text=t('drive.drive_label').format(drive=drive[0]))
-            self._detect_label.configure(
-                text=f"{check.disc_type}", fg=COLORS["warning"]
-            )
+            self._detect_label.configure(text=f"{check.disc_type}", fg=COLORS["warning"])
             if self._last_non_vcd_drive != drive:
                 self._last_non_vcd_drive = drive
                 self._vcd_path.set(drive)
-                log_msg = t('log.non_vcd_blocked').format(drive=drive, type=check.disc_type)
-                if log_msg == 'log.non_vcd_blocked':
-                    log_msg = f"Disc detected in drive {drive}, type: {check.disc_type}, blocking process."
+                log_msg = t('log.unsupported_blocked').format(drive=drive, type=check.disc_type)
                 self._log.log(log_msg, "warning")
                 self._show_unsupported_disc_dialog(drive, check.disc_type)
         else:
             self._last_non_vcd_drive = None
             if drives:
                 self._drive_lbl.configure(
-                    text=t('header.drive_no_vcd').format(drive=drives[0][0]),
+                    text=t('header.drive_no_disc').format(drive=drives[0][0]),
                     fg=COLORS["warning"]
                 )
             else:
@@ -3304,6 +4219,9 @@ class VCDRipperApp(tk.Tk):
             return
 
         dlg = tk.Toplevel(self)
+        dlg.update_theme = lambda: None
+        dlg.update_lang = lambda: None
+        dlg.update_scale = lambda: None
         self._about_dialog = dlg
 
         def _on_destroy(event):
@@ -3316,7 +4234,7 @@ class VCDRipperApp(tk.Tk):
         dlg.resizable(False, False)
         self._set_window_icon(dlg)
         dlg.grab_set()
-        dlg_w, dlg_h = scale_val(540), scale_val(490)
+        dlg_w, dlg_h = scale_val(540), scale_val(570)
         dlg.geometry(f"{dlg_w}x{dlg_h}")
 
         # Center the dialog over the main window
@@ -3347,7 +4265,7 @@ class VCDRipperApp(tk.Tk):
         else:
             lbl_img = tk.Label(
                 header_inner, text="💿", font=FONTS["emoji_38"],
-                bg=COLORS["bg_dark"]
+                bg=COLORS["bg_dark"], fg=COLORS["text_primary"]
             )
             lbl_img.pack(side="left", padx=(0, scale_val(16)))
 
@@ -3377,7 +4295,7 @@ class VCDRipperApp(tk.Tk):
         lbl_author = tk.Label(
             header_text, text="Developed by jjsiew2014-art",
             font=FONTS["small"],
-            bg=COLORS["bg_dark"], fg=COLORS["text_muted"]
+            bg=COLORS["bg_dark"], fg=COLORS["text_secondary"]
         )
         lbl_author.pack(anchor="w", pady=(3, 0))
 
@@ -3395,7 +4313,7 @@ class VCDRipperApp(tk.Tk):
 
         lbl_appearance_title = tk.Label(
             row_appearance, text=t('appearance.title'), font=FONTS["small"],
-            bg=COLORS["bg_panel"], fg=COLORS["text_muted"],
+            bg=COLORS["bg_panel"], fg=COLORS["text_secondary"],
             width=16, anchor="w"
         )
         lbl_appearance_title.pack(side="left")
@@ -3418,8 +4336,10 @@ class VCDRipperApp(tk.Tk):
                 width=11,
                 bg=m_bg, fg=m_fg,
                 relief="flat", bd=0, padx=2, pady=3,
-                cursor="hand2" if not self._ripping else "",
-                state="normal" if not self._ripping else "disabled",
+                cursor="hand2" if not (self._ripping or getattr(self, "_scanning", False)) else "",
+                state="normal" if not (self._ripping or getattr(self, "_scanning", False)) else "disabled",
+                activebackground=COLORS["accent_hover"] if is_active else COLORS["bg_hover"],
+                activeforeground=m_fg,
                 command=lambda m=m_key: set_appearance(m)
             )
             btn.pack(side="left", padx=(0, 6 if idx < len(modes) - 1 else 0))
@@ -3431,7 +4351,7 @@ class VCDRipperApp(tk.Tk):
 
         lbl_scale_title = tk.Label(
             row_scale, text=t('scale.title'), font=FONTS["small"],
-            bg=COLORS["bg_panel"], fg=COLORS["text_muted"],
+            bg=COLORS["bg_panel"], fg=COLORS["text_secondary"],
             width=16, anchor="w"
         )
         lbl_scale_title.pack(side="left")
@@ -3454,20 +4374,97 @@ class VCDRipperApp(tk.Tk):
                 width=11,
                 bg=s_bg, fg=s_fg,
                 relief="flat", bd=0, padx=2, pady=3,
-                cursor="hand2" if not self._ripping else "",
-                state="normal" if not self._ripping else "disabled",
+                cursor="hand2" if not (self._ripping or getattr(self, "_scanning", False)) else "",
+                state="normal" if not (self._ripping or getattr(self, "_scanning", False)) else "disabled",
+                activebackground=COLORS["accent_hover"] if is_active else COLORS["bg_hover"],
+                activeforeground=s_fg,
                 command=lambda sk=s_key: set_scale(sk)
             )
             btn.pack(side="left", padx=(0, 6 if idx < len(scales) - 1 else 0))
             scale_buttons[s_key] = btn
 
-        # 3. Language row
+        # 3. Ripping Process Priority row
+        row_priority = tk.Frame(body_frame, bg=COLORS["bg_panel"])
+        row_priority.pack(fill="x", pady=6)
+
+        lbl_priority_title = tk.Label(
+            row_priority, text=t('priority.title'), font=FONTS["small"],
+            bg=COLORS["bg_panel"], fg=COLORS["text_secondary"],
+            width=16, anchor="w"
+        )
+        lbl_priority_title.pack(side="left")
+
+        priority_btn_frame = tk.Frame(row_priority, bg=COLORS["bg_panel"])
+        priority_btn_frame.pack(side="left")
+
+        priority_buttons = {}
+        priorities = [
+            ("Low",    t('priority.low')),
+            ("Medium", t('priority.medium')),
+            ("High",   t('priority.high')),
+        ]
+        for idx, (p_key, p_label) in enumerate(priorities):
+            is_active = (i18n.priority == p_key)
+            p_bg = COLORS["accent"] if is_active else COLORS["bg_card"]
+            p_fg = COLORS.get("btn_primary_fg", "#FFFFFF") if is_active else COLORS["text_secondary"]
+            btn = tk.Button(
+                priority_btn_frame, text=p_label, font=FONTS["small"],
+                width=11,
+                bg=p_bg, fg=p_fg,
+                relief="flat", bd=0, padx=2, pady=3,
+                cursor="hand2" if not (self._ripping or getattr(self, "_scanning", False)) else "",
+                state="normal" if not (self._ripping or getattr(self, "_scanning", False)) else "disabled",
+                activebackground=COLORS["accent_hover"] if is_active else COLORS["bg_hover"],
+                activeforeground=p_fg,
+                command=lambda pk=p_key: set_priority(pk)
+            )
+            btn.pack(side="left", padx=(0, 6 if idx < len(priorities) - 1 else 0))
+            priority_buttons[p_key] = btn
+
+        # 4. Ripping FPS Mode row
+        row_fps_mode = tk.Frame(body_frame, bg=COLORS["bg_panel"])
+        row_fps_mode.pack(fill="x", pady=6)
+
+        lbl_fps_mode_title = tk.Label(
+            row_fps_mode, text=t('fps_mode.title'), font=FONTS["small"],
+            bg=COLORS["bg_panel"], fg=COLORS["text_secondary"],
+            width=16, anchor="w"
+        )
+        lbl_fps_mode_title.pack(side="left")
+
+        fps_btn_frame = tk.Frame(row_fps_mode, bg=COLORS["bg_panel"])
+        fps_btn_frame.pack(side="left")
+
+        fps_buttons = {}
+        fps_modes = [
+            ("Passthrough", t('fps_mode.passthrough')),
+            ("CFR",         t('fps_mode.cfr')),
+        ]
+        for idx, (f_key, f_label) in enumerate(fps_modes):
+            is_active = (i18n.fps_mode == f_key)
+            f_bg = COLORS["accent"] if is_active else COLORS["bg_card"]
+            f_fg = COLORS.get("btn_primary_fg", "#FFFFFF") if is_active else COLORS["text_secondary"]
+            btn = tk.Button(
+                fps_btn_frame, text=f_label, font=FONTS["small"],
+                width=11,
+                bg=f_bg, fg=f_fg,
+                relief="flat", bd=0, padx=2, pady=3,
+                cursor="hand2" if not (self._ripping or getattr(self, "_scanning", False)) else "",
+                state="normal" if not (self._ripping or getattr(self, "_scanning", False)) else "disabled",
+                activebackground=COLORS["accent_hover"] if is_active else COLORS["bg_hover"],
+                activeforeground=f_fg,
+                command=lambda fk=f_key: set_fps_mode(fk)
+            )
+            btn.pack(side="left", padx=(0, 6 if idx < len(fps_modes) - 1 else 0))
+            fps_buttons[f_key] = btn
+
+        # 5. Language row
         row_language = tk.Frame(body_frame, bg=COLORS["bg_panel"])
         row_language.pack(fill="x", pady=6)
 
         lbl_lang_title = tk.Label(
             row_language, text=t('language.title'), font=FONTS["small"],
-            bg=COLORS["bg_panel"], fg=COLORS["text_muted"],
+            bg=COLORS["bg_panel"], fg=COLORS["text_secondary"],
             width=16, anchor="w"
         )
         lbl_lang_title.pack(side="left")
@@ -3485,7 +4482,11 @@ class VCDRipperApp(tk.Tk):
         btn_en = tk.Button(
             btn_lang_frame, text="EN", font=FONTS["small"],
             width=5, bg=en_bg, fg=en_fg,
-            relief="flat", bd=0, pady=3, cursor="hand2",
+            relief="flat", bd=0, pady=3,
+            cursor="hand2" if not (self._ripping or getattr(self, "_scanning", False)) else "",
+            state="normal" if not (self._ripping or getattr(self, "_scanning", False)) else "disabled",
+            activebackground=COLORS["accent_hover"] if en_active else COLORS["bg_hover"],
+            activeforeground=COLORS.get("btn_primary_fg", "#FFFFFF") if en_active else COLORS["text_secondary"],
             command=lambda: set_lang("en")
         )
         btn_en.pack(side="left", padx=(0, 6))
@@ -3493,7 +4494,11 @@ class VCDRipperApp(tk.Tk):
         btn_zh = tk.Button(
             btn_lang_frame, text="中", font=FONTS["small"],
             width=5, bg=zh_bg, fg=zh_fg,
-            relief="flat", bd=0, pady=3, cursor="hand2",
+            relief="flat", bd=0, pady=3,
+            cursor="hand2" if not (self._ripping or getattr(self, "_scanning", False)) else "",
+            state="normal" if not (self._ripping or getattr(self, "_scanning", False)) else "disabled",
+            activebackground=COLORS["accent_hover"] if zh_active else COLORS["bg_hover"],
+            activeforeground=COLORS.get("btn_primary_fg", "#FFFFFF") if zh_active else COLORS["text_secondary"],
             command=lambda: set_lang("zh_CN")
         )
         btn_zh.pack(side="left")
@@ -3504,7 +4509,7 @@ class VCDRipperApp(tk.Tk):
 
         lbl_ffmpeg_title = tk.Label(
             row_ffmpeg, text=t('about.ffmpeg'), font=FONTS["small"],
-            bg=COLORS["bg_panel"], fg=COLORS["text_muted"],
+            bg=COLORS["bg_panel"], fg=COLORS["text_secondary"],
             width=16, anchor="w"
         )
         lbl_ffmpeg_title.pack(side="left")
@@ -3523,13 +4528,13 @@ class VCDRipperApp(tk.Tk):
 
         lbl_ffmpeg_path_title = tk.Label(
             row_ffmpeg_path, text=t('about.ffmpeg_path'), font=FONTS["small"],
-            bg=COLORS["bg_panel"], fg=COLORS["text_muted"],
+            bg=COLORS["bg_panel"], fg=COLORS["text_secondary"],
             width=16, anchor="w"
         )
         lbl_ffmpeg_path_title.pack(side="left")
 
         path_text = os.path.basename(self._ffmpeg) if self._ffmpeg else "—"
-        path_color = COLORS["text_secondary"] if self._ffmpeg else COLORS["text_muted"]
+        path_color = COLORS["text_primary"] if self._ffmpeg else COLORS["text_secondary"]
         lbl_path = tk.Label(
             row_ffmpeg_path, text=path_text, font=FONTS["body"],
             bg=COLORS["bg_panel"], fg=path_color
@@ -3546,7 +4551,7 @@ class VCDRipperApp(tk.Tk):
         lbl_license = tk.Label(
             dlg, text=t('about.license'),
             font=FONTS["small"], bg=COLORS["bg_panel"],
-            fg=COLORS["text_muted"]
+            fg=COLORS["text_secondary"]
         )
         lbl_license.pack(pady=(12, 0))
 
@@ -3572,6 +4577,13 @@ class VCDRipperApp(tk.Tk):
             scale_buttons["100%"].configure(text=t('scale.100'))
             scale_buttons["125%"].configure(text=t('scale.125'))
             scale_buttons["150%"].configure(text=t('scale.150'))
+            lbl_priority_title.configure(text=t('priority.title'))
+            priority_buttons["Low"].configure(text=t('priority.low'))
+            priority_buttons["Medium"].configure(text=t('priority.medium'))
+            priority_buttons["High"].configure(text=t('priority.high'))
+            lbl_fps_mode_title.configure(text=t('fps_mode.title'))
+            fps_buttons["Passthrough"].configure(text=t('fps_mode.passthrough'))
+            fps_buttons["CFR"].configure(text=t('fps_mode.cfr'))
             lbl_lang_title.configure(text=t('language.title'))
             lbl_ffmpeg_title.configure(text=t('about.ffmpeg'))
             lbl_ffmpeg_status.configure(text=t('about.ready') if self._ffmpeg else t('about.not_found'))
@@ -3583,15 +4595,22 @@ class VCDRipperApp(tk.Tk):
             zh_act = (i18n.lang == "zh_CN")
             btn_en.configure(
                 bg=COLORS["accent"] if en_act else COLORS["bg_card"],
-                fg=COLORS.get("btn_primary_fg", "#FFFFFF") if en_act else COLORS["text_secondary"]
+                fg=COLORS.get("btn_primary_fg", "#FFFFFF") if en_act else COLORS["text_secondary"],
+                activebackground=COLORS["accent_hover"] if en_act else COLORS["bg_hover"],
+                activeforeground=COLORS.get("btn_primary_fg", "#FFFFFF") if en_act else COLORS["text_secondary"]
             )
             btn_zh.configure(
                 bg=COLORS["accent"] if zh_act else COLORS["bg_card"],
-                fg=COLORS.get("btn_primary_fg", "#FFFFFF") if zh_act else COLORS["text_secondary"]
+                fg=COLORS.get("btn_primary_fg", "#FFFFFF") if zh_act else COLORS["text_secondary"],
+                activebackground=COLORS["accent_hover"] if zh_act else COLORS["bg_hover"],
+                activeforeground=COLORS.get("btn_primary_fg", "#FFFFFF") if zh_act else COLORS["text_secondary"]
             )
 
         def update_dlg_theme():
-            dlg.configure(bg=COLORS["bg_panel"])
+            try:
+                dlg.configure(bg=COLORS["bg_panel"])
+            except Exception:
+                pass
             try:
                 d_hwnd = ctypes.windll.user32.GetAncestor(dlg.winfo_id(), 2) or dlg.winfo_id()
                 set_window_dark_mode(d_hwnd, i18n.get_effective_theme() == "dark")
@@ -3599,17 +4618,17 @@ class VCDRipperApp(tk.Tk):
                 pass
             header_frame.configure(bg=COLORS["bg_dark"])
             header_inner.configure(bg=COLORS["bg_dark"])
-            lbl_img.configure(bg=COLORS["bg_dark"])
+            lbl_img.configure(bg=COLORS["bg_dark"], fg=COLORS["text_primary"])
             header_text.configure(bg=COLORS["bg_dark"])
             title_row.configure(bg=COLORS["bg_dark"])
             lbl_app_name.configure(bg=COLORS["bg_dark"], fg=COLORS["text_primary"])
             lbl_version.configure(bg=COLORS["bg_dark"], fg=COLORS["accent"])
-            lbl_author.configure(bg=COLORS["bg_dark"], fg=COLORS["text_muted"])
+            lbl_author.configure(bg=COLORS["bg_dark"], fg=COLORS["text_secondary"])
             header_sep.configure(bg=COLORS["border"])
 
             body_frame.configure(bg=COLORS["bg_panel"])
             row_appearance.configure(bg=COLORS["bg_panel"])
-            lbl_appearance_title.configure(bg=COLORS["bg_panel"], fg=COLORS["text_muted"])
+            lbl_appearance_title.configure(bg=COLORS["bg_panel"], fg=COLORS["text_secondary"])
             theme_btn_frame.configure(bg=COLORS["bg_panel"])
 
             for m_key, btn in theme_buttons.items():
@@ -3623,7 +4642,7 @@ class VCDRipperApp(tk.Tk):
                 )
 
             row_scale.configure(bg=COLORS["bg_panel"])
-            lbl_scale_title.configure(bg=COLORS["bg_panel"], fg=COLORS["text_muted"])
+            lbl_scale_title.configure(bg=COLORS["bg_panel"], fg=COLORS["text_secondary"])
             scale_btn_frame.configure(bg=COLORS["bg_panel"])
 
             for sk, btn in scale_buttons.items():
@@ -3636,47 +4655,84 @@ class VCDRipperApp(tk.Tk):
                     activeforeground=s_fg
                 )
 
+            row_priority.configure(bg=COLORS["bg_panel"])
+            lbl_priority_title.configure(bg=COLORS["bg_panel"], fg=COLORS["text_secondary"])
+            priority_btn_frame.configure(bg=COLORS["bg_panel"])
+
+            for pk, btn in priority_buttons.items():
+                is_act = (i18n.priority == pk)
+                p_bg = COLORS["accent"] if is_act else COLORS["bg_card"]
+                p_fg = COLORS.get("btn_primary_fg", "#FFFFFF") if is_act else COLORS["text_secondary"]
+                btn.configure(
+                    bg=p_bg, fg=p_fg,
+                    activebackground=COLORS["accent_hover"] if is_act else COLORS["bg_hover"],
+                    activeforeground=p_fg
+                )
+
+            row_fps_mode.configure(bg=COLORS["bg_panel"])
+            lbl_fps_mode_title.configure(bg=COLORS["bg_panel"], fg=COLORS["text_secondary"])
+            fps_btn_frame.configure(bg=COLORS["bg_panel"])
+
+            for fk, btn in fps_buttons.items():
+                is_act = (i18n.fps_mode == fk)
+                f_bg = COLORS["accent"] if is_act else COLORS["bg_card"]
+                f_fg = COLORS.get("btn_primary_fg", "#FFFFFF") if is_act else COLORS["text_secondary"]
+                btn.configure(
+                    bg=f_bg, fg=f_fg,
+                    activebackground=COLORS["accent_hover"] if is_act else COLORS["bg_hover"],
+                    activeforeground=f_fg
+                )
+
             row_language.configure(bg=COLORS["bg_panel"])
-            lbl_lang_title.configure(bg=COLORS["bg_panel"], fg=COLORS["text_muted"])
+            lbl_lang_title.configure(bg=COLORS["bg_panel"], fg=COLORS["text_secondary"])
             btn_lang_frame.configure(bg=COLORS["bg_panel"])
             en_act = (i18n.lang == "en")
             zh_act = (i18n.lang == "zh_CN")
             btn_en.configure(
                 bg=COLORS["accent"] if en_act else COLORS["bg_card"],
                 fg=COLORS.get("btn_primary_fg", "#FFFFFF") if en_act else COLORS["text_secondary"],
-                activebackground=COLORS["accent_hover"] if en_act else COLORS["bg_hover"]
+                activebackground=COLORS["accent_hover"] if en_act else COLORS["bg_hover"],
+                activeforeground=COLORS.get("btn_primary_fg", "#FFFFFF") if en_act else COLORS["text_secondary"]
             )
             btn_zh.configure(
                 bg=COLORS["accent"] if zh_act else COLORS["bg_card"],
                 fg=COLORS.get("btn_primary_fg", "#FFFFFF") if zh_act else COLORS["text_secondary"],
-                activebackground=COLORS["accent_hover"] if zh_act else COLORS["bg_hover"]
+                activebackground=COLORS["accent_hover"] if zh_act else COLORS["bg_hover"],
+                activeforeground=COLORS.get("btn_primary_fg", "#FFFFFF") if zh_act else COLORS["text_secondary"]
             )
 
             row_ffmpeg.configure(bg=COLORS["bg_panel"])
-            lbl_ffmpeg_title.configure(bg=COLORS["bg_panel"], fg=COLORS["text_muted"])
+            lbl_ffmpeg_title.configure(bg=COLORS["bg_panel"], fg=COLORS["text_secondary"])
             lbl_ffmpeg_status.configure(
                 bg=COLORS["bg_panel"],
                 fg=COLORS["success"] if self._ffmpeg else COLORS["error"]
             )
             row_ffmpeg_path.configure(bg=COLORS["bg_panel"])
-            lbl_ffmpeg_path_title.configure(bg=COLORS["bg_panel"], fg=COLORS["text_muted"])
+            lbl_ffmpeg_path_title.configure(bg=COLORS["bg_panel"], fg=COLORS["text_secondary"])
             lbl_path.configure(
                 bg=COLORS["bg_panel"],
-                fg=COLORS["text_secondary"] if self._ffmpeg else COLORS["text_muted"]
+                fg=COLORS["text_primary"] if self._ffmpeg else COLORS["text_secondary"]
             )
             body_sep.configure(bg=COLORS["border"])
-            lbl_license.configure(bg=COLORS["bg_panel"], fg=COLORS["text_muted"])
+            lbl_license.configure(bg=COLORS["bg_panel"], fg=COLORS["text_secondary"])
             btn_close.configure(
                 bg=COLORS["accent"],
                 fg=COLORS.get("btn_primary_fg", "#FFFFFF"),
                 activebackground=COLORS["accent_hover"],
                 activeforeground=COLORS.get("btn_primary_fg", "#FFFFFF")
             )
+            try:
+                dlg.update_idletasks()
+            except Exception:
+                pass
 
         def update_dlg_scale():
-            dlg.update_idletasks()
+            try:
+                dlg.update_idletasks()
+            except Exception:
+                pass
             dw = scale_val(540)
-            dh = scale_val(490)
+            dh = scale_val(570)
             rx = self.winfo_x()
             ry = self.winfo_y()
             rw = self.winfo_width()
@@ -3690,6 +4746,16 @@ class VCDRipperApp(tk.Tk):
                 lbl_img.configure(image=new_icon)
                 lbl_img.image = new_icon
 
+            for mk, btn in theme_buttons.items():
+                is_act = (i18n.theme == mk)
+                m_bg = COLORS["accent"] if is_act else COLORS["bg_card"]
+                m_fg = COLORS.get("btn_primary_fg", "#FFFFFF") if is_act else COLORS["text_secondary"]
+                btn.configure(
+                    bg=m_bg, fg=m_fg,
+                    activebackground=COLORS["accent_hover"] if is_act else COLORS["bg_hover"],
+                    activeforeground=m_fg
+                )
+
             for sk, btn in scale_buttons.items():
                 is_act = (i18n.scale == sk)
                 s_bg = COLORS["accent"] if is_act else COLORS["bg_card"]
@@ -3700,23 +4766,86 @@ class VCDRipperApp(tk.Tk):
                     activeforeground=s_fg
                 )
 
+            for pk, btn in priority_buttons.items():
+                is_act = (i18n.priority == pk)
+                p_bg = COLORS["accent"] if is_act else COLORS["bg_card"]
+                p_fg = COLORS.get("btn_primary_fg", "#FFFFFF") if is_act else COLORS["text_secondary"]
+                btn.configure(
+                    bg=p_bg, fg=p_fg,
+                    activebackground=COLORS["accent_hover"] if is_act else COLORS["bg_hover"],
+                    activeforeground=p_fg
+                )
+
+            for fk, btn in fps_buttons.items():
+                is_act = (i18n.fps_mode == fk)
+                f_bg = COLORS["accent"] if is_act else COLORS["bg_card"]
+                f_fg = COLORS.get("btn_primary_fg", "#FFFFFF") if is_act else COLORS["text_secondary"]
+                btn.configure(
+                    bg=f_bg, fg=f_fg,
+                    activebackground=COLORS["accent_hover"] if is_act else COLORS["bg_hover"],
+                    activeforeground=f_fg
+                )
+
+            en_act = (i18n.lang == "en")
+            zh_act = (i18n.lang == "zh_CN")
+            btn_en.configure(
+                bg=COLORS["accent"] if en_act else COLORS["bg_card"],
+                fg=COLORS.get("btn_primary_fg", "#FFFFFF") if en_act else COLORS["text_secondary"],
+                activebackground=COLORS["accent_hover"] if en_act else COLORS["bg_hover"],
+                activeforeground=COLORS.get("btn_primary_fg", "#FFFFFF") if en_act else COLORS["text_secondary"]
+            )
+            btn_zh.configure(
+                bg=COLORS["accent"] if zh_act else COLORS["bg_card"],
+                fg=COLORS.get("btn_primary_fg", "#FFFFFF") if zh_act else COLORS["text_secondary"],
+                activebackground=COLORS["accent_hover"] if zh_act else COLORS["bg_hover"],
+                activeforeground=COLORS.get("btn_primary_fg", "#FFFFFF") if zh_act else COLORS["text_secondary"]
+            )
+
         dlg.update_theme = update_dlg_theme
         dlg.update_lang = update_dlg_lang
         dlg.update_scale = update_dlg_scale
 
         def set_appearance(mode):
-            if self._ripping:
+            if self._ripping or getattr(self, "_scanning", False):
                 return
             i18n.switch_theme(mode)
             update_dlg_theme()
 
         def set_scale(sk):
-            if self._ripping:
+            if self._ripping or getattr(self, "_scanning", False):
                 return
             i18n.switch_scale(sk)
             update_dlg_scale()
 
+        def set_priority(pk):
+            if self._ripping or getattr(self, "_scanning", False):
+                return
+            i18n.switch_priority(pk)
+            for k, b in priority_buttons.items():
+                is_act = (i18n.priority == k)
+                b.configure(
+                    bg=COLORS["accent"] if is_act else COLORS["bg_card"],
+                    fg=COLORS.get("btn_primary_fg", "#FFFFFF") if is_act else COLORS["text_secondary"],
+                    activebackground=COLORS["accent_hover"] if is_act else COLORS["bg_hover"],
+                    activeforeground=COLORS.get("btn_primary_fg", "#FFFFFF") if is_act else COLORS["text_secondary"]
+                )
+
+        def set_fps_mode(fk):
+            if self._ripping or getattr(self, "_scanning", False):
+                return
+            i18n.switch_fps_mode(fk)
+            for k, b in fps_buttons.items():
+                is_act = (i18n.fps_mode == k)
+                b.configure(
+                    bg=COLORS["accent"] if is_act else COLORS["bg_card"],
+                    fg=COLORS.get("btn_primary_fg", "#FFFFFF") if is_act else COLORS["text_secondary"],
+                    activebackground=COLORS["accent_hover"] if is_act else COLORS["bg_hover"],
+                    activeforeground=COLORS.get("btn_primary_fg", "#FFFFFF") if is_act else COLORS["text_secondary"]
+                )
+
         def set_lang(l):
+            if self._ripping or getattr(self, "_scanning", False):
+                return
             i18n.switch(l)
             update_dlg_lang()
 
@@ -3724,34 +4853,233 @@ class VCDRipperApp(tk.Tk):
         dlg.bind("<Return>", lambda e: dlg.destroy())
 
     def _browse_source(self):
-        folder = filedialog.askdirectory(title="Select VCD folder")
+        folder = filedialog.askdirectory(title="Select Disc folder")
         if not folder:
             return
         self._vcd_path.set(folder)
         self._detect_label.configure(text=t('drive.detecting'), fg=COLORS["accent"])
         def check_bg():
-            check = is_vcd_disc(folder)
+            check = detect_disc(folder)
             self.after(0, lambda: self._apply_browse_check(folder, check))
         threading.Thread(target=check_bg, daemon=True).start()
 
     def _apply_browse_check(self, folder, check):
-        if check.is_vcd:
+        if check.is_dvd:
+            self._source_type = "DVD"
             self._last_non_vcd_drive = None
+            self._update_format_visibility_for_source()
+            self._log.log(t('log.dvd_found').format(folder=folder), "success")
+            self._detect_label.configure(text=t('drive.folder_selected'), fg=COLORS["success"])
+            vol_name = get_volume_label(folder)
+            disp_name = vol_name or Path(folder).name or folder
+            self._drive_lbl.configure(text=f"📀  {disp_name}", fg=COLORS["success"])
+            if hasattr(self, "_scan_btn"):
+                self._scan_btn.set_text(t('source.scan_dvd'), icon="🔍")
+            self.after(300, self._scan_disc)
+        elif check.is_vcd:
+            self._source_type = "VCD"
+            self._last_non_vcd_drive = None
+            self._update_format_visibility_for_source()
             self._log.log(t('log.vcd_found').format(folder=folder), "success")
             self._detect_label.configure(text=t('drive.folder_selected'), fg=COLORS["success"])
+            vol_name = get_volume_label(folder)
+            disp_name = vol_name or Path(folder).name or folder
+            self._drive_lbl.configure(text=f"💿  {disp_name}", fg=COLORS["success"])
+            if hasattr(self, "_scan_btn"):
+                self._scan_btn.set_text(t('source.scan_vcd'), icon="🔍")
+            self.after(300, self._scan_disc)
         else:
-            log_msg = t('log.non_vcd_blocked').format(drive=folder, type=check.disc_type)
-            if log_msg == 'log.non_vcd_blocked':
-                log_msg = f"Disc detected in drive {folder}, type: {check.disc_type}, blocking process."
+            self._source_type = "NONE"
+            self._update_format_visibility_for_source()
+            log_msg = t('log.unsupported_blocked').format(drive=folder, type=check.disc_type)
             self._log.log(log_msg, "warning")
             self._detect_label.configure(text=f"{check.disc_type}", fg=COLORS["warning"])
             self._show_unsupported_disc_dialog(folder, check.disc_type)
 
-    def _scan_vcd(self):
+    def _on_scan_error(self, title, message):
+        """Cleanly reset scan state and show error dialog when a scan fails."""
+        self._scanning = False
+        if hasattr(self, "_scan_btn"):
+            self._scan_btn.configure_state(True)
+        if hasattr(self, "_scan_progress_frame"):
+            self._scan_progress_frame.pack_forget()
+        if hasattr(self, "_scan_progress_bar"):
+            self._scan_progress_bar.pack_forget()
+        self._log.log(f"{title}: {message}", "error")
+        messagebox.showerror(title, message)
+
+    def _scan_disc(self):
+        if getattr(self, "_scanning", False) or self._ripping:
+            return
+
         path = self._vcd_path.get().strip()
         if not path:
             messagebox.showwarning(t('messageboxes.no_source_title'), t('messageboxes.no_source_msg'))
             return
+
+        self._scanning = True
+        if hasattr(self, "_scan_btn"):
+            self._scan_btn.configure_state(False)
+
+        self._detect_label.configure(text=t('drive.detecting'), fg=COLORS["accent"])
+
+        def _bg_detect():
+            try:
+                check = detect_disc(path)
+                self.after(0, lambda: self._dispatch_scan_after_detect(path, check))
+            except Exception as exc:
+                self.after(0, lambda err=str(exc): self._on_scan_error("Disc Detection Error", err))
+
+        threading.Thread(target=_bg_detect, daemon=True).start()
+
+    def _dispatch_scan_after_detect(self, path, check):
+        if check.is_dvd:
+            self._source_type = "DVD"
+            self._update_format_visibility_for_source()
+            self._scan_dvd(path)
+        elif check.is_vcd:
+            self._source_type = "VCD"
+            self._update_format_visibility_for_source()
+            self._scan_vcd_pipeline(path)
+        else:
+            self._scanning = False
+            if hasattr(self, "_scan_btn"):
+                self._scan_btn.configure_state(True)
+            self._source_type = "NONE"
+            self._update_format_visibility_for_source()
+            if check.disc_type in ("Empty Drive", "Empty Disc", "Drive Unavailable", "No Disc"):
+                self._log.log(f"Drive {path}: {check.disc_type} ({check.details})", "warning")
+                self._detect_label.configure(text=f"{check.disc_type}", fg=COLORS["warning"])
+                messagebox.showinfo(
+                    t('messageboxes.no_files_title'),
+                    f"{check.disc_type}: {check.details or 'Please insert a VCD or DVD.'}"
+                )
+            else:
+                log_msg = t('log.unsupported_blocked').format(drive=path, type=check.disc_type)
+                self._log.log(log_msg, "warning")
+                self._detect_label.configure(text=f"{check.disc_type}", fg=COLORS["warning"])
+                self._show_unsupported_disc_dialog(path, check.disc_type)
+
+    def _scan_vcd(self):
+        self._scan_disc()
+
+    def _scan_dvd(self, path):
+        if not path:
+            self._scanning = False
+            if hasattr(self, "_scan_btn"):
+                self._scan_btn.configure_state(True)
+            messagebox.showwarning(t('messageboxes.no_source_title'), t('messageboxes.no_source_msg'))
+            return
+
+        self._scanning = True
+        if hasattr(self, "_scan_btn"):
+            self._scan_btn.configure_state(False)
+
+        self._videos.clear()
+        self._clear_list()
+        dvd_engine.clear_dvdvideo_probe_cache()
+        dvd_engine.clear_handbrake_validation_cache()
+        self._log.log(t('log.scan_dir').format(path=path), "accent")
+
+        # Show scan progress bar
+        folder_display = get_volume_label(path) or Path(path).name or path
+        self._scan_progress_lbl.configure(text=t('content.scan_prog_dvd').format(name=folder_display))
+        self._scan_progress_pct.configure(text="0%")
+        self._scan_progress_var.set(0)
+        self._scan_progress_frame.pack(fill="x", padx=8, pady=(0, 4))
+        self._scan_progress_bar.pack(fill="x", padx=8, pady=(0, 8))
+
+        def after_dvd_scan(titles):
+            self._scanning = False
+            if hasattr(self, "_scan_btn"):
+                self._scan_btn.configure_state(True)
+
+            if not titles:
+                self._scan_progress_frame.pack_forget()
+                self._scan_progress_bar.pack_forget()
+                self._log.log(t('log.no_vid'), "warning")
+                messagebox.showinfo(
+                    t('messageboxes.no_files_title'),
+                    t('messageboxes.no_files_msg')
+                )
+                return
+
+            total = len(titles)
+            self._log.log(t('log.found_files').format(total=total), "info")
+            self._video_count_badge.configure(text=t('content.badge_titles').format(n=total))
+
+            for t_item in titles:
+                dur_str = format_duration(t_item.get("duration", 0))
+                self._log.log(
+                    f"  {t_item['filename']}  —  {t_item.get('size_mb', 0)} MB  {dur_str}  [{t_item.get('resolution', '')} {t_item.get('aspect_ratio', '')}]", "info"
+                )
+                chaps_data = t_item.get("chapters_data", [])
+                if chaps_data and len(chaps_data) > 1:
+                    for ch in chaps_data:
+                        c_n = ch.get("chapter_number", 1)
+                        st_s = ch.get("start_str", "0:00")
+                        et_s = ch.get("end_str", "")
+                        d_s = ch.get("duration_str", "")
+                        self._log.log(f"    • Chapter {c_n:02d}: {st_s} → {et_s} ({d_s})", "info")
+
+            # Finish scan progress
+            self._scan_progress_var.set(100)
+            self._scan_progress_pct.configure(text="100%")
+            self._populate_list(titles)
+            self.after(600, lambda: (
+                self._scan_progress_frame.pack_forget(),
+                self._scan_progress_bar.pack_forget()
+            ))
+
+        def do_scan_dvd_bg():
+            try:
+                if not os.path.isdir(path):
+                    self.after(0, lambda: self._on_scan_error(
+                        t('messageboxes.invalid_path_title'),
+                        t('messageboxes.invalid_path_msg').format(path=path)
+                    ))
+                    return
+
+                # Check encryption
+                video_ts_dir = dvd_engine.find_video_ts_dir(path)
+                if video_ts_dir:
+                    is_enc, enc_reason = dvd_engine.check_dvd_encryption(str(video_ts_dir))
+                    if is_enc:
+                        def handle_enc():
+                            self._scanning = False
+                            if hasattr(self, "_scan_btn"):
+                                self._scan_btn.configure_state(True)
+                            self._scan_progress_frame.pack_forget()
+                            self._scan_progress_bar.pack_forget()
+                            self._log.log(f"Encrypted DVD detected: {enc_reason}", "warning")
+                            messagebox.showwarning(
+                                t('messageboxes.dvd_encrypted_title'),
+                                t('messageboxes.dvd_encrypted_msg')
+                            )
+                        self.after(0, handle_enc)
+                        return
+
+                self.after(0, lambda self_var=self._scan_progress_var: self_var.set(30))
+                titles = dvd_engine.scan_dvd_titles(path, self._ffmpeg, self._ffprobe, self._handbrake)
+                self.after(0, lambda: after_dvd_scan(titles))
+            except Exception as exc:
+                self.after(0, lambda err=str(exc): self._on_scan_error("DVD Scan Error", err))
+
+        threading.Thread(target=do_scan_dvd_bg, daemon=True).start()
+
+    def _scan_vcd_pipeline(self, path=None):
+        if not path:
+            path = self._vcd_path.get().strip()
+        if not path:
+            self._scanning = False
+            if hasattr(self, "_scan_btn"):
+                self._scan_btn.configure_state(True)
+            messagebox.showwarning(t('messageboxes.no_source_title'), t('messageboxes.no_source_msg'))
+            return
+
+        self._scanning = True
+        if hasattr(self, "_scan_btn"):
+            self._scan_btn.configure_state(False)
 
         self._videos.clear()
         self._clear_list()
@@ -3766,6 +5094,9 @@ class VCDRipperApp(tk.Tk):
 
         def after_scan(files):
             if not files:
+                self._scanning = False
+                if hasattr(self, "_scan_btn"):
+                    self._scan_btn.configure_state(True)
                 self._scan_progress_frame.pack_forget()
                 self._scan_progress_bar.pack_forget()
                 self._log.log(t('log.no_vid'), "warning")
@@ -3777,84 +5108,95 @@ class VCDRipperApp(tk.Tk):
 
             total = len(files)
             self._log.log(t('log.found_files').format(total=total), "info")
-            self._video_count_badge.configure(text=t('content.badge').format(n=total))
+            self._video_count_badge.configure(text=t('content.badge_tracks').format(n=total))
 
             def probe_all():
-                infos = []
-                for i, f in enumerate(files):
-                    fname = Path(f).name
-                    pct = int((i / total) * 100)
-                    self.after(0, lambda idx=i, fn=fname, p=pct: (
-                        self._scan_progress_lbl.configure(text=t('content.scan_prog_read').format(idx=idx+1, total=total, name=fn)),
-                        self._scan_progress_pct.configure(text=f"{p}%"),
-                        self._scan_progress_var.set(p)
-                    ))
-                    if self._ffprobe:
-                        info = probe_video(self._ffprobe, f)
-                    else:
-                        info = {
-                            "path":     f,
-                            "filename": sanitize_filename(fname),
-                            "size_mb":  round(os.path.getsize(f) / 1024**2, 1),
-                            "duration": 0, "width": 352, "height": 240,
-                            "codec": "MPEG1", "fps": "29 fps", "bitrate": "~1150 kbps",
-                        }
-                    infos.append(info)
-                    self.after(0, lambda info_item=info: self._log.log(
-                        f"  {info_item['filename']}  —  {info_item['size_mb']} MB  {format_duration(info_item['duration'])}", "info"
-                    ))
+                try:
+                    infos = []
+                    for i, f in enumerate(files):
+                        fname = Path(f).name
+                        pct = int((i / total) * 100)
+                        self.after(0, lambda idx=i, fn=fname, p=pct: (
+                            self._scan_progress_lbl.configure(text=t('content.scan_prog_read').format(idx=idx+1, total=total, name=fn)),
+                            self._scan_progress_pct.configure(text=f"{p}%"),
+                            self._scan_progress_var.set(p)
+                        ))
+                        if self._ffprobe:
+                            info = probe_video(self._ffprobe, f)
+                        else:
+                            info = {
+                                "path":     f,
+                                "filename": sanitize_filename(fname),
+                                "size_mb":  round(os.path.getsize(f) / 1024**2, 1),
+                                "duration": 0, "width": 352, "height": 240,
+                                "codec": "MPEG1", "fps": "29 fps", "bitrate": "~1150 kbps",
+                            }
+                        info["disc_type"] = "VCD"
+                        infos.append(info)
+                        self.after(0, lambda info_item=info: self._log.log(
+                            f"  {info_item['filename']}  —  {info_item['size_mb']} MB  {format_duration(info_item['duration'])}", "info"
+                        ))
 
-                # Finish scan progress
-                self.after(0, lambda: (
-                    self._scan_progress_var.set(100),
-                    self._scan_progress_pct.configure(text="100%"),
-                    self._populate_list(infos),
-                    self.after(600, lambda: (
-                        self._scan_progress_frame.pack_forget(),
-                        self._scan_progress_bar.pack_forget()
-                    ))
-                ))
+                    def finish_vcd():
+                        self._scanning = False
+                        if hasattr(self, "_scan_btn"):
+                            self._scan_btn.configure_state(True)
+                        self._scan_progress_var.set(100)
+                        self._scan_progress_pct.configure(text="100%")
+                        self._populate_list(infos)
+                        self.after(600, lambda: (
+                            self._scan_progress_frame.pack_forget(),
+                            self._scan_progress_bar.pack_forget()
+                        ))
+                    self.after(0, finish_vcd)
+                except Exception as exc:
+                    self.after(0, lambda err=str(exc): self._on_scan_error("VCD Metadata Read Error", err))
 
             threading.Thread(target=probe_all, daemon=True).start()
 
         def do_scan_bg():
-            if not os.path.isdir(path):
-                self.after(0, lambda: (
-                    self._scan_progress_frame.pack_forget(),
-                    self._scan_progress_bar.pack_forget(),
-                    messagebox.showerror(t('messageboxes.invalid_path_title'), t('messageboxes.invalid_path_msg').format(path=path))
+            try:
+                if not os.path.isdir(path):
+                    self.after(0, lambda: self._on_scan_error(
+                        t('messageboxes.invalid_path_title'),
+                        t('messageboxes.invalid_path_msg').format(path=path)
+                    ))
+                    return
+
+                folder_display = get_volume_label(path) or Path(path).name or path
+                self.after(0, lambda: self._scan_progress_lbl.configure(
+                    text=t('content.scan_prog_folder').format(name=folder_display)
                 ))
-                return
 
-            folder_display = get_volume_label(path) or Path(path).name or path
-            self.after(0, lambda: self._scan_progress_lbl.configure(
-                text=t('content.scan_prog_folder').format(name=folder_display)
-            ))
+                # Validate disc format - intercept non-VCD discs
+                check = is_vcd_disc(path)
+                if not check.is_vcd:
+                    def handle_non_vcd():
+                        self._scanning = False
+                        if hasattr(self, "_scan_btn"):
+                            self._scan_btn.configure_state(True)
+                        self._scan_progress_frame.pack_forget()
+                        self._scan_progress_bar.pack_forget()
+                        log_msg = t('log.non_vcd_blocked').format(drive=path, type=check.disc_type)
+                        if log_msg == 'log.non_vcd_blocked':
+                            log_msg = f"Disc detected in drive {path}, type: {check.disc_type}, blocking process."
+                        self._log.log(log_msg, "warning")
+                        self._show_unsupported_disc_dialog(path, check.disc_type)
+                    self.after(0, handle_non_vcd)
+                    return
 
-            # Validate disc format - intercept non-VCD discs
-            check = is_vcd_disc(path)
-            if not check.is_vcd:
-                def handle_non_vcd():
-                    self._scan_progress_frame.pack_forget()
-                    self._scan_progress_bar.pack_forget()
-                    log_msg = t('log.non_vcd_blocked').format(drive=path, type=check.disc_type)
-                    if log_msg == 'log.non_vcd_blocked':
-                        log_msg = f"Disc detected in drive {path}, type: {check.disc_type}, blocking process."
-                    self._log.log(log_msg, "warning")
-                    self._show_unsupported_disc_dialog(path, check.disc_type)
-                self.after(0, handle_non_vcd)
-                return
-
-            files = find_dat_files(path)
-            if not files:
-                # Fallback: look for any video-like files
-                exts = [".dat", ".mpg", ".mpeg", ".vob", ".mp4", ".avi"]
-                for ext in exts:
-                    try:
-                        files.extend(str(p) for p in Path(path).rglob(f"*{ext}"))
-                    except Exception:
-                        pass
-            self.after(0, lambda: after_scan(files))
+                files = find_dat_files(path)
+                if not files:
+                    # Fallback: look for any video-like files
+                    exts = [".dat", ".mpg", ".mpeg", ".vob", ".mp4", ".avi"]
+                    for ext in exts:
+                        try:
+                            files.extend(str(p) for p in Path(path).rglob(f"*{ext}"))
+                        except Exception:
+                            pass
+                self.after(0, lambda: after_scan(files))
+            except Exception as exc:
+                self.after(0, lambda err=str(exc): self._on_scan_error("VCD Scan Error", err))
 
         threading.Thread(target=do_scan_bg, daemon=True).start()
 
@@ -3862,6 +5204,7 @@ class VCDRipperApp(tk.Tk):
         self._videos = infos
         self._cards.clear()
         self._selected_indices.clear()
+        self._selected_chapters.clear()
         self._clear_list()
 
         if self._empty_frame.winfo_exists():
@@ -3870,14 +5213,27 @@ class VCDRipperApp(tk.Tk):
         for i, info in enumerate(infos):
             card = VideoCard(
                 self._list_frame, info, i,
-                on_toggle=self._on_card_toggle
+                on_toggle=self._on_card_toggle,
+                on_chapter_toggle=self._on_chapter_toggle
             )
             card.pack(fill="x", padx=4, pady=3)
             self._cards.append(card)
 
-        # Auto-select all videos by default
+        # Auto-select all videos/chapters by default
         self._select_all()
-        self._log.log(t('log.loaded').format(total=len(infos)), "success")
+        if self._source_type == "DVD":
+            self._log.log(t('log.dvd_loaded').format(total=len(infos)), "success")
+            self._video_count_badge.configure(text=t('content.badge_titles').format(n=len(infos)))
+        else:
+            self._log.log(t('log.loaded').format(total=len(infos)), "success")
+            self._video_count_badge.configure(text=t('content.badge_tracks').format(n=len(infos)))
+
+        if hasattr(self, "_detect_label"):
+            self._detect_label.configure(text=t('drive.detected'), fg=COLORS["cyan"])
+
+        if self._source_type == "DVD":
+            self._active_dvd_title_idx = 0
+            self._update_audio_track_selector()
 
     def _clear_list(self):
         for w in self._list_frame.winfo_children():
@@ -3885,31 +5241,118 @@ class VCDRipperApp(tk.Tk):
                 w.destroy()
 
     def _on_card_toggle(self, index, selected):
+        if self._source_type == "DVD":
+            self._active_dvd_title_idx = index
+            self._update_audio_track_selector()
         if selected:
             self._selected_indices.add(index)
+            if self._source_type == "DVD" and index < len(self._cards):
+                card = self._cards[index]
+                chaps = card.info.get("chapters_data", [])
+                for c in chaps:
+                    c_num = int(c.get("chapter_number", 1))
+                    self._selected_chapters.discard((index, c_num))
         else:
             self._selected_indices.discard(index)
         self._update_sel_count()
 
+    def _on_chapter_toggle(self, index, chapter_number, selected):
+        if self._source_type == "DVD":
+            self._active_dvd_title_idx = index
+            self._update_audio_track_selector()
+        key = (index, chapter_number)
+        if selected:
+            self._selected_chapters.add(key)
+            self._selected_indices.discard(index)
+            if index < len(self._cards):
+                self._cards[index].set_title_selected(False)
+        else:
+            self._selected_chapters.discard(key)
+        self._update_sel_count()
+
+    def _on_dvd_mode_change(self):
+        pass
+
     def _select_all(self):
-        for i, card in enumerate(self._cards):
-            card.set_selected(True)
-            self._selected_indices.add(i)
+        if self._source_type == "DVD":
+            self._selected_indices.clear()
+            self._selected_chapters.clear()
+            for idx, card in enumerate(self._cards):
+                chaps = card.info.get("chapters_data", [])
+                if chaps:
+                    card.select_all_chapters(notify=False)
+                    for c in chaps:
+                        c_num = int(c.get("chapter_number", 1))
+                        self._selected_chapters.add((idx, c_num))
+                else:
+                    self._selected_indices.add(idx)
+                    card.set_title_selected(True)
+                    card.clear_all_chapters(notify=False)
+        else:
+            self._selected_indices = set(range(len(self._videos)))
+            for card in self._cards:
+                card.set_selected(True)
         self._update_sel_count()
 
     def _select_none(self):
-        for card in self._cards:
-            card.set_selected(False)
         self._selected_indices.clear()
+        self._selected_chapters.clear()
+        for card in self._cards:
+            card.set_title_selected(False)
+            card.clear_all_chapters(notify=False)
         self._update_sel_count()
 
+    def _is_all_selected(self) -> bool:
+        if not self._videos or not self._cards:
+            return False
+        if self._source_type == "DVD":
+            for idx, card in enumerate(self._cards):
+                chaps = card.info.get("chapters_data", [])
+                if chaps:
+                    all_ch_selected = all((idx, int(c.get("chapter_number", 1))) in self._selected_chapters for c in chaps)
+                    title_selected = (idx in self._selected_indices)
+                    if not (all_ch_selected or title_selected):
+                        return False
+                else:
+                    if idx not in self._selected_indices:
+                        return False
+            return True
+        else:
+            return len(self._selected_indices) == len(self._videos) and len(self._videos) > 0
+
+    def _is_none_selected(self) -> bool:
+        if not self._videos:
+            return False
+        return len(self._selected_indices) == 0 and len(self._selected_chapters) == 0
+
     def _update_sel_count(self):
-        n = len(self._selected_indices)
-        total = len(self._videos)
-        self._sel_count_lbl.configure(
-            text=t('selection.count').format(n=n, total=total),
-            fg=COLORS["accent"] if n else COLORS["text_muted"]
-        )
+        all_sel = self._is_all_selected()
+        none_sel = self._is_none_selected()
+
+        if hasattr(self, "_sel_all_btn"):
+            all_icon = "☑" if all_sel else "☐"
+            self._sel_all_btn.set_text(t('selection.all'), icon=all_icon)
+            self._sel_all_btn.set_active(all_sel)
+
+        if hasattr(self, "_sel_none_btn"):
+            none_icon = "☑" if none_sel else "☐"
+            self._sel_none_btn.set_text(t('selection.none'), icon=none_icon)
+            self._sel_none_btn.set_active(none_sel)
+
+        if self._source_type == "DVD":
+            n_t = len(self._selected_indices)
+            n_c = len(self._selected_chapters)
+            self._sel_count_lbl.configure(
+                text=t('selection.count_dvd_hierarchical').format(titles=n_t, chapters=n_c),
+                fg=COLORS["accent"] if (n_t > 0 or n_c > 0) else COLORS["text_muted"]
+            )
+        else:
+            n = len(self._selected_indices)
+            total = len(self._videos)
+            self._sel_count_lbl.configure(
+                text=t('selection.count').format(n=n, total=total),
+                fg=COLORS["accent"] if n else COLORS["text_muted"]
+            )
 
     def _choose_output(self):
         folder = filedialog.askdirectory(title="Select output folder")
@@ -3917,29 +5360,138 @@ class VCDRipperApp(tk.Tk):
             self._output_folder.set(folder)
             self._log.log(t('log.out_set').format(folder=folder), "info")
 
+    def _update_format_greyout(self):
+        """Grey out or enable Video and Audio format options according to output mode."""
+        mode = self._output_mode.get()
+        if mode not in ("video", "audio", "both"):
+            mode = "video"
+            self._output_mode.set("video")
+
+        # In "both" mode, enforce valid selections exist in both panels
+        if mode == "both":
+            if not self._output_format.get() or (self._source_type == "DVD" and self._output_format.get() == "DAT"):
+                self._output_format.set("MP4")
+            if not self._audio_format.get() or self._audio_format.get() not in AUDIO_FORMATS:
+                self._audio_format.set("MP3")
+
+        video_enabled = (mode in ("video", "both"))
+        audio_enabled = (mode in ("audio", "both"))
+
+        # ── Video panel greyout / enable ──
+        if hasattr(self, "_video_fmt_lbl"):
+            self._video_fmt_lbl.configure(
+                fg=COLORS["text_secondary"] if video_enabled else COLORS["text_muted"]
+            )
+        for item in getattr(self, "_fmt_items", []):
+            fmt = item.get("fmt", "")
+            info = OUTPUT_FORMATS.get(fmt, {"color": COLORS["text_primary"]})
+            rb = item.get("rb")
+            lbl = item.get("lbl")
+            if rb:
+                if video_enabled:
+                    rb.configure(
+                        state="normal",
+                        fg=info["color"],
+                        activeforeground=info["color"],
+                        cursor="hand2"
+                    )
+                else:
+                    rb.configure(
+                        state="disabled",
+                        fg=COLORS["text_muted"],
+                        activeforeground=COLORS["text_muted"],
+                        cursor=""
+                    )
+            if lbl:
+                lbl.configure(
+                    fg=COLORS["text_secondary"] if video_enabled else COLORS["text_muted"]
+                )
+
+        # ── Resolution sub-panel greyout / enable ──
+        if hasattr(self, "_res_title_lbl"):
+            self._res_title_lbl.configure(
+                fg=COLORS["text_secondary"] if video_enabled else COLORS["text_muted"]
+            )
+        if hasattr(self, "_res_orig_rb"):
+            self._res_orig_rb.configure(
+                state="normal" if video_enabled else "disabled",
+                fg=COLORS["text_primary"] if video_enabled else COLORS["text_muted"],
+                activeforeground=COLORS["text_primary"] if video_enabled else COLORS["text_muted"],
+                disabledforeground=COLORS["text_muted"],
+                cursor="hand2" if video_enabled else ""
+            )
+        if hasattr(self, "_res_1080p_rb"):
+            self._res_1080p_rb.configure(
+                state="normal" if video_enabled else "disabled",
+                fg=COLORS["text_primary"] if video_enabled else COLORS["text_muted"],
+                activeforeground=COLORS["text_primary"] if video_enabled else COLORS["text_muted"],
+                disabledforeground=COLORS["text_muted"],
+                cursor="hand2" if video_enabled else ""
+            )
+
+        # ── DAT sub-panel greyout / enable ──
+        if hasattr(self, "_dat_mode_lbl"):
+            self._dat_mode_lbl.configure(
+                fg=COLORS["text_secondary"] if video_enabled else COLORS["text_muted"]
+            )
+        if hasattr(self, "_dat_raw_rb"):
+            self._dat_raw_rb.configure(
+                state="normal" if video_enabled else "disabled",
+                fg=COLORS["text_primary"] if video_enabled else COLORS["text_muted"],
+                activeforeground=COLORS["text_primary"] if video_enabled else COLORS["text_muted"],
+                disabledforeground=COLORS["text_muted"],
+                cursor="hand2" if video_enabled else ""
+            )
+        if hasattr(self, "_dat_mp4_rb"):
+            self._dat_mp4_rb.configure(
+                state="normal" if video_enabled else "disabled",
+                fg=COLORS["text_primary"] if video_enabled else COLORS["text_muted"],
+                activeforeground=COLORS["text_primary"] if video_enabled else COLORS["text_muted"],
+                disabledforeground=COLORS["text_muted"],
+                cursor="hand2" if video_enabled else ""
+            )
+
+        # ── Audio panel greyout / enable ──
+        if hasattr(self, "_audio_fmt_lbl"):
+            self._audio_fmt_lbl.configure(
+                fg=COLORS["text_secondary"] if audio_enabled else COLORS["text_muted"]
+            )
+        for item in getattr(self, "_audio_items", []):
+            afmt = item.get("fmt", "")
+            ainfo = AUDIO_FORMATS.get(afmt, {"color": COLORS["text_primary"]})
+            rb = item.get("rb")
+            lbl = item.get("lbl")
+            if rb:
+                if audio_enabled:
+                    rb.configure(
+                        state="normal",
+                        fg=ainfo["color"],
+                        activeforeground=ainfo["color"],
+                        cursor="hand2"
+                    )
+                else:
+                    rb.configure(
+                        state="disabled",
+                        fg=COLORS["text_muted"],
+                        activeforeground=COLORS["text_muted"],
+                        cursor=""
+                    )
+            if lbl:
+                lbl.configure(
+                    fg=COLORS["text_secondary"] if audio_enabled else COLORS["text_muted"]
+                )
+
+        # Update suboption visibility (DAT / Resolution) based on video state
+        self._update_format_visibility_for_source()
+
     def _on_format_change(self):
-        fmt = self._output_format.get()
-        if fmt == "DAT":
-            self._dat_suboption_frame.pack(fill="x", padx=20, pady=(6, 0))
-        else:
-            self._dat_suboption_frame.pack_forget()
-        # Show resolution panel only for MP4 and MOV
-        if fmt in ("MP4", "MOV"):
-            self._res_suboption_frame.pack(fill="x", padx=20, pady=(6, 0))
-        else:
-            self._res_suboption_frame.pack_forget()
+        self._update_format_greyout()
 
     def _on_audio_format_change(self):
         pass
 
     def _on_mode_change(self):
-        mode = self._output_mode.get()
-        if mode == "video":
-            self._audio_panel.pack_forget()
-            self._video_panel.pack(fill="x", padx=0, pady=0)
-        else:
-            self._video_panel.pack_forget()
-            self._audio_panel.pack(fill="x", padx=0, pady=0)
+        self._update_format_greyout()
 
     # ── Ripping logic ─────────────────────────
     def _stop_rip(self):
@@ -3963,11 +5515,34 @@ class VCDRipperApp(tk.Tk):
         if mode == "audio":
             fmt     = self._audio_format.get()
             fmt_cfg = AUDIO_FORMATS[fmt]
+            vid_fmt = None
+            aud_fmt = fmt
+        elif mode == "both":
+            vid_fmt = self._output_format.get()
+            if not vid_fmt:
+                vid_fmt = "MP4"
+                self._output_format.set("MP4")
+            fmt     = vid_fmt
+            fmt_cfg = OUTPUT_FORMATS.get(vid_fmt, {"ext": f".{vid_fmt.lower()}", "args": []})
+            aud_fmt = self._audio_format.get()
+            if not aud_fmt or aud_fmt not in AUDIO_FORMATS:
+                aud_fmt = "MP3"
+                self._audio_format.set("MP3")
         else:
             fmt     = self._output_format.get()
-            fmt_cfg = OUTPUT_FORMATS[fmt]
+            fmt_cfg = OUTPUT_FORMATS.get(fmt, {"ext": f".{fmt.lower()}", "args": []})
+            vid_fmt = fmt
+            aud_fmt = None
 
-        needs_ffmpeg = (mode == "audio") or (fmt not in ("DAT",))
+        is_dvd = (self._source_type == "DVD") or any(v.get("disc_type") == "DVD" for v in self._videos)
+
+        if is_dvd and fmt == "DAT" and mode in ("video", "both"):
+            fmt = "MP4"
+            vid_fmt = "MP4"
+            self._output_format.set("MP4")
+            fmt_cfg = OUTPUT_FORMATS["MP4"]
+
+        needs_ffmpeg = is_dvd or (mode in ("audio", "both")) or (fmt not in ("DAT",))
         if needs_ffmpeg and not self._ffmpeg:
             messagebox.showerror(
                 t('messageboxes.ffmpeg_req_title'),
@@ -3975,6 +5550,92 @@ class VCDRipperApp(tk.Tk):
             )
             return
 
+        # ── DVD Unified Ripping Dispatch (Hierarchical Selection) ──
+        if is_dvd:
+            title_jobs = [self._videos[i] for i in sorted(self._selected_indices) if i < len(self._videos)]
+            chapter_jobs = []
+            for (idx, ch_num) in sorted(self._selected_chapters):
+                if idx < len(self._videos):
+                    t_item = self._videos[idx]
+                    for c in t_item.get("chapters_data", []):
+                        if int(c.get("chapter_number", 1)) == ch_num:
+                            chapter_jobs.append((t_item, c))
+                            break
+
+            total_dvd_jobs = len(title_jobs) + len(chapter_jobs)
+            if total_dvd_jobs == 0:
+                if self._videos:
+                    if messagebox.askyesno(
+                        t('messageboxes.no_sel_title'),
+                        t('messageboxes.no_sel_msg')
+                    ):
+                        self._select_all()
+                        title_jobs = [self._videos[i] for i in sorted(self._selected_indices) if i < len(self._videos)]
+                        chapter_jobs = []
+                        for (idx, ch_num) in sorted(self._selected_chapters):
+                            if idx < len(self._videos):
+                                t_item = self._videos[idx]
+                                for c in t_item.get("chapters_data", []):
+                                    if int(c.get("chapter_number", 1)) == ch_num:
+                                        chapter_jobs.append((t_item, c))
+                                        break
+                        total_dvd_jobs = len(title_jobs) + len(chapter_jobs)
+                    else:
+                        return
+                else:
+                    messagebox.showwarning(t('messageboxes.no_vid_title'), t('messageboxes.no_vid_msg'))
+                    return
+
+            out_folder = self._output_folder.get().strip()
+            if not out_folder:
+                out_folder = filedialog.askdirectory(title="Select output folder")
+                if not out_folder:
+                    return
+                self._output_folder.set(out_folder)
+
+            os.makedirs(out_folder, exist_ok=True)
+
+            self._ripping = True
+            self._cancel_requested = False
+            self._current_proc = None
+
+            self._rip_btn.configure_state(False)
+            self._stop_btn.configure_state(True)
+            if hasattr(self, "_clear_all_btn"):
+                self._clear_all_btn.configure(
+                    state="disabled",
+                    fg=COLORS["text_muted"],
+                    cursor=""
+                )
+            self._progress_bar.pack(fill="x", padx=8, pady=(0, 8))
+            self._progress_var.set(0)
+            self._taskbar_progress.set_value(0, 100)
+            disp_total = total_dvd_jobs * 2 if mode == "both" else total_dvd_jobs
+            disp_fmt = f"{vid_fmt} + {aud_fmt}" if mode == "both" else fmt
+            self._log.log(
+                t('log.start_ext').format(total=disp_total, fmt=disp_fmt),
+                "accent"
+            )
+
+            create_title_folder = bool(getattr(self, "_dvd_title_folder_var", None) and self._dvd_title_folder_var.get())
+            generate_timeline = bool(getattr(self, "_dvd_timeline_var", None) and self._dvd_timeline_var.get())
+            threading.Thread(
+                target=self._rip_dvd_unified_thread,
+                args=(
+                    title_jobs, chapter_jobs, out_folder,
+                    vid_fmt if mode == "both" else fmt,
+                    self._use_1080p.get(),
+                    (mode == "audio"),
+                    aud_fmt if mode in ("audio", "both") else fmt,
+                    (mode == "both"),
+                    create_title_folder,
+                    generate_timeline
+                ),
+                daemon=True
+            ).start()
+            return
+
+        # ── VCD Ripping Dispatch (Preserved 100%) ──
         selected = sorted(self._selected_indices)
         if not selected:
             if self._videos:
@@ -4015,19 +5676,38 @@ class VCDRipperApp(tk.Tk):
         self._progress_bar.pack(fill="x", padx=8, pady=(0, 8))
         self._progress_var.set(0)
         self._taskbar_progress.set_value(0, 100)
+        disp_total = len(videos_to_rip) * 2 if mode == "both" else len(videos_to_rip)
+        disp_fmt = f"{vid_fmt} + {aud_fmt}" if mode == "both" else fmt
         self._log.log(
-            t('log.start_ext').format(total=len(videos_to_rip), fmt=fmt),
+            t('log.start_ext').format(total=disp_total, fmt=disp_fmt),
             "accent"
         )
 
         threading.Thread(
             target=self._rip_thread,
-            args=(videos_to_rip, out_folder, fmt, fmt_cfg, self._use_1080p.get()),
+            args=(
+                videos_to_rip, out_folder,
+                vid_fmt if mode in ("video", "both") else "MP4",
+                fmt_cfg,
+                self._use_1080p.get(),
+                mode,
+                aud_fmt if mode in ("audio", "both") else "MP3"
+            ),
             daemon=True
         ).start()
 
-    def _rip_thread(self, videos, out_folder, fmt, fmt_cfg, use_1080p=False):
-        total   = len(videos)
+    def _rip_thread(self, videos, out_folder, fmt, fmt_cfg, use_1080p=False, mode="video", audio_fmt="MP3"):
+        items = []
+        for v in videos:
+            if mode == "both":
+                items.append({"video": v, "type": "video", "name": f"{v['filename']} (Video)"})
+                items.append({"video": v, "type": "audio", "name": f"{v['filename']} (Audio)"})
+            elif mode == "audio":
+                items.append({"video": v, "type": "audio", "name": v['filename']})
+            else:
+                items.append({"video": v, "type": "video", "name": v['filename']})
+
+        total   = len(items)
         success = 0
         errors  = 0
         was_cancelled = False
@@ -4040,22 +5720,31 @@ class VCDRipperApp(tk.Tk):
             pass
 
         # Calculate total duration for time-based progress
-        total_duration = sum(v.get("duration", 0) for v in videos)
+        total_duration = sum(v.get("duration", 0) for v in videos) * (2 if mode == "both" else 1)
         completed_duration = 0.0
 
-        for i, video in enumerate(videos):
+        for i, item in enumerate(items):
             if self._cancel_requested:
                 was_cancelled = True
                 break
 
+            video = item["video"]
+            item_type = item["type"]
+            display_name = item["name"]
             raw_stem = Path(video["filename"]).stem
             stem = video.get("custom_stem") or raw_stem
             stem = sanitize_filename(stem, fallback=f"track_{i+1}")
-            # For DAT video: use .dat or .mp4 based on user sub-option
-            if fmt == "DAT" and self._output_mode.get() == "video":
-                out_ext = ".mp4" if self._dat_rename_mp4.get() else ".dat"
+
+            if item_type == "video":
+                # For DAT video: use .dat or .mp4 based on user sub-option
+                if fmt == "DAT" and mode in ("video", "both"):
+                    out_ext = ".mp4" if self._dat_rename_mp4.get() else ".dat"
+                else:
+                    out_ext = fmt_cfg["ext"]
             else:
-                out_ext = fmt_cfg["ext"]
+                afmt_cfg = AUDIO_FORMATS.get(audio_fmt, AUDIO_FORMATS["MP3"])
+                out_ext = afmt_cfg["ext"]
+
             out_name = f"{stem}{out_ext}"
             out_path = os.path.join(out_folder, out_name)
 
@@ -4069,20 +5758,20 @@ class VCDRipperApp(tk.Tk):
             if total_duration > 0:
                 overall_pct = (completed_duration / total_duration) * 100
             else:
-                overall_pct = (i / total) * 100
-            self.after(0, lambda v=video, idx=i, pct=overall_pct: (
+                overall_pct = (i / total) * 100 if total > 0 else 0
+            self.after(0, lambda d_n=display_name, idx=i, pct=overall_pct: (
                 self._progress_lbl.configure(
-                    text=t('content.rip_prog_proc').format(idx=idx+1, total=total, name=v['filename'])
+                    text=t('content.rip_prog_proc').format(idx=idx+1, total=total, name=d_n)
                 ),
                 self._progress_pct.configure(text=f"{int(pct)}%"),
                 self._progress_var.set(pct),
                 self._taskbar_progress.set_value(int(pct), 100)
             ))
-            self.after(0, lambda v=video: self._log.log(
-                t('log.extracting').format(name=v['filename'], out=os.path.basename(out_path)), "info"
+            self.after(0, lambda d_n=display_name, o_n=os.path.basename(out_path): self._log.log(
+                t('log.extracting').format(name=d_n, out=o_n), "info"
             ))
 
-            if fmt == "DAT" and self._output_mode.get() == "video":
+            if item_type == "video" and fmt == "DAT" and mode in ("video", "both"):
                 # Direct binary file copy without FFmpeg (with watchdog & queue)
                 try:
                     src_path = video["path"]
@@ -4171,6 +5860,7 @@ class VCDRipperApp(tk.Tk):
                     size = round(os.path.getsize(out_path) / 1024**2, 1)
                     success += 1
                     completed_duration += video.get("duration", 0)
+                    video["last_ripped_video_path"] = out_path
                     self.after(0, lambda n=out_name, s=size: self._log.log(
                         t('log.raw_dat_ok').format(name=n, size=s), "success"
                     ))
@@ -4180,18 +5870,32 @@ class VCDRipperApp(tk.Tk):
                         t('log.copy_err').format(err=err), "error"
                     ))
             else:
-                # Use FFmpeg to convert/rip video with error tolerance and low priority
-                ffmpeg_args = list(fmt_cfg["args"])
-                if use_1080p and fmt in ("MP4", "MOV"):
-                    # Upscale VCD (352x240 / 352x288) to 1440x1080 (4:3 at 1080p)
-                    # using Lanczos for sharpest quality upscale
-                    ffmpeg_args = ["-vf", "scale=1440:1080:flags=lanczos"] + ffmpeg_args
+                # Use FFmpeg to convert/rip video or audio with error tolerance and low priority
+                if item_type == "video":
+                    ffmpeg_args = list(fmt_cfg["args"])
+                    if use_1080p and fmt in ("MP4", "MOV"):
+                        # Upscale VCD (352x240 / 352x288) to 1440x1080 (4:3 at 1080p)
+                        # using Lanczos for sharpest quality upscale
+                        ffmpeg_args = ["-vf", "scale=1440:1080:flags=lanczos"] + ffmpeg_args
+                    if fmt in ("MP4", "MOV"):
+                        fps_val = "cfr" if getattr(self.i18n, "fps_mode", "Passthrough").upper() == "CFR" else "passthrough"
+                        ffmpeg_args = ["-fps_mode", fps_val] + ffmpeg_args
+                    input_source = video["path"]
+                else:  # audio
+                    afmt_cfg = AUDIO_FORMATS.get(audio_fmt, AUDIO_FORMATS["MP3"])
+                    ffmpeg_args = list(afmt_cfg["args"])
+                    last_vid = video.get("last_ripped_video_path")
+                    if last_vid and os.path.exists(last_vid) and not last_vid.lower().endswith(".dat"):
+                        input_source = last_vid
+                    else:
+                        input_source = video["path"]
+
                 cmd = [
                     self._ffmpeg,
                     "-nostdin",
                     "-err_detect", "ignore_err",
                     "-fflags", "+discardcorrupt",
-                    "-i", video["path"],
+                    "-i", input_source,
                     *ffmpeg_args,
                     "-max_error_rate", "1.0",
                     "-y",
@@ -4199,6 +5903,7 @@ class VCDRipperApp(tk.Tk):
                 ]
 
                 try:
+                    extra_flags = get_priority_creation_flag(self.i18n.priority)
                     proc = subprocess.Popen(
                         cmd,
                         stdout=subprocess.PIPE,
@@ -4207,10 +5912,10 @@ class VCDRipperApp(tk.Tk):
                         encoding="utf-8",
                         errors="replace",
                         env=get_subprocess_env(),
-                        creationflags=subprocess.CREATE_NO_WINDOW | BELOW_NORMAL_PRIORITY_CLASS
+                        **get_subprocess_kwargs(extra_flags=extra_flags)
                     )
                     self._current_proc = proc
-                    set_low_process_priority(proc)
+                    set_process_priority(proc, priority_level=self.i18n.priority, low_io=True)
 
                     video_dur = video.get("duration", 0)
                     line_queue = queue.Queue()
@@ -4231,12 +5936,41 @@ class VCDRipperApp(tk.Tk):
                     reader_t = threading.Thread(target=read_stdout, daemon=True)
                     reader_t.start()
 
-                    last_heartbeat = time.time()
+                    last_io_time = time.time()
+                    last_progress_time = time.time()
+                    last_log_time = 0.0
+                    last_seen_frame = -1
+                    last_seen_secs = -1.0
+                    last_seen_size_kb = -1
+                    stall_warning_logged = False
                     proc_timed_out = False
 
                     while True:
                         if self._cancel_requested:
                             kill_process_tree(proc, force=True)
+                            break
+
+                        now = time.time()
+                        io_stalled_secs = now - last_io_time
+                        prog_stalled_secs = now - last_progress_time
+
+                        if prog_stalled_secs >= 8.0 and not stall_warning_logged:
+                            stall_warning_logged = True
+                            frame_info = f" at frame {last_seen_frame}" if last_seen_frame >= 0 else ""
+                            self.after(0, lambda v=video, fi=frame_info, ps=int(prog_stalled_secs): self._log.log(
+                                f"[Disc Read Warning] Processing stalled{fi} on {v['filename']} ({ps}s without progress; physical disc sector may be damaged)...",
+                                "warning"
+                            ))
+
+                        if io_stalled_secs > DISC_READ_TIMEOUT_SECONDS or prog_stalled_secs > DISC_READ_TIMEOUT_SECONDS:
+                            proc_timed_out = True
+                            was_timed_out = True
+                            stalled_reason = f"stalled at frame {last_seen_frame}" if (last_seen_frame >= 0 and prog_stalled_secs > DISC_READ_TIMEOUT_SECONDS) else "no response"
+                            self.after(0, lambda v=video, sr=stalled_reason: self._log.log(
+                                f"{t('log.read_timeout').format(name=v['filename'], timeout=int(DISC_READ_TIMEOUT_SECONDS))} ({sr})",
+                                "warning"
+                            ))
+                            terminate_and_kill(proc, graceful_timeout=GRACEFUL_TERMINATE_TIMEOUT)
                             break
 
                         try:
@@ -4248,31 +5982,49 @@ class VCDRipperApp(tk.Tk):
                                     if rem is None:
                                         break
                                 break
-
-                            if (time.time() - last_heartbeat) > DISC_READ_TIMEOUT_SECONDS:
-                                proc_timed_out = True
-                                was_timed_out = True
-                                self.after(0, lambda v=video: self._log.log(
-                                    t('log.read_timeout').format(name=v['filename'], timeout=int(DISC_READ_TIMEOUT_SECONDS)),
-                                    "warning"
-                                ))
-                                terminate_and_kill(proc, graceful_timeout=GRACEFUL_TERMINATE_TIMEOUT)
-                                break
                             continue
 
                         if line is None:
                             break
 
-                        last_heartbeat = time.time()
+                        last_io_time = time.time()
                         line = line.strip()
                         if line and ("frame=" in line or "speed=" in line):
-                            self.after(0, lambda l=line: self._log.log(l, "info"))
-                            # Parse time= for fine-grained progress
+                            frame_match = re.search(r'frame=\s*(\d+)', line)
                             time_match = re.search(r'time=(\d+):(\d+):(\d+\.?\d*)', line)
-                            if time_match and video_dur > 0 and total_duration > 0:
+                            size_match = re.search(r'size=\s*(\d+)kB', line)
+
+                            cur_frame = int(frame_match.group(1)) if frame_match else None
+                            cur_secs = None
+                            if time_match:
                                 h, m, s = time_match.groups()
-                                current_secs = int(h) * 3600 + int(m) * 60 + float(s)
-                                file_progress = min(current_secs, video_dur)
+                                cur_secs = int(h) * 3600 + int(m) * 60 + float(s)
+                            cur_size_kb = int(size_match.group(1)) if size_match else None
+
+                            progress_advanced = False
+                            if cur_frame is not None and cur_frame > last_seen_frame:
+                                last_seen_frame = cur_frame
+                                progress_advanced = True
+                            if cur_secs is not None and cur_secs > (last_seen_secs + 0.05):
+                                last_seen_secs = cur_secs
+                                progress_advanced = True
+                            if cur_size_kb is not None and cur_size_kb > (last_seen_size_kb + 32):
+                                last_seen_size_kb = cur_size_kb
+                                progress_advanced = True
+
+                            if progress_advanced:
+                                last_progress_time = time.time()
+                                stall_warning_logged = False
+
+                            now = time.time()
+                            should_log = (now - last_log_time) >= 1.5
+                            if should_log and (now - last_progress_time) < 2.0:
+                                last_log_time = now
+                                self.after(0, lambda l=line: self._log.log(l, "info"))
+
+                            # Parse time= for fine-grained progress
+                            if time_match and video_dur > 0 and total_duration > 0:
+                                file_progress = min(cur_secs, video_dur)
                                 overall = (completed_duration + file_progress) / total_duration * 100
                                 overall = min(overall, 99.9)  # Don't hit 100% until truly done
                                 self.after(0, lambda p=overall: (
@@ -4305,20 +6057,24 @@ class VCDRipperApp(tk.Tk):
                             self.after(0, lambda n=out_name, s=part_size: self._log.log(
                                 t('log.saved_partial').format(name=n, size=s), "warning"
                             ))
+                        errors += 1
+                        completed_duration += video.get("duration", 0)
                         break
 
                     if proc.returncode == 0:
                         size = round(os.path.getsize(out_path) / 1024**2, 1)
                         success += 1
                         completed_duration += video.get("duration", 0)
+                        if item_type == "video":
+                            video["last_ripped_video_path"] = out_path
                         self.after(0, lambda n=out_name, s=size: self._log.log(
                             t('log.saved_ok').format(name=n, size=s), "success"
                         ))
                     else:
                         errors += 1
                         completed_duration += video.get("duration", 0)
-                        self.after(0, lambda v=video: self._log.log(
-                            t('log.ffmpeg_err').format(name=v['filename']), "error"
+                        self.after(0, lambda d_n=display_name: self._log.log(
+                            t('log.ffmpeg_err').format(name=d_n), "error"
                         ))
 
                 except Exception as e:
@@ -4333,6 +6089,819 @@ class VCDRipperApp(tk.Tk):
             cancelled=(was_cancelled or self._cancel_requested),
             timed_out=was_timed_out
         ))
+
+    def _rip_dvd_unified_thread(self, title_jobs, chapter_jobs, out_folder, output_format, use_1080p=False, audio_only=False, audio_format="WAV", extract_both=False, create_title_folder=False, generate_timeline=False):
+        jobs = []
+        for t_item in title_jobs:
+            t_base_name = t_item.get("filename") or t_item.get("name") or f"Title {t_item.get('title_number', 1):02d}"
+            dur = float(t_item.get("duration", 0.0))
+            if extract_both:
+                jobs.append({
+                    "type": "title",
+                    "title": t_item,
+                    "chapter": None,
+                    "duration": dur,
+                    "name": f"{t_base_name} (Video)",
+                    "job_mode": "video",
+                })
+                jobs.append({
+                    "type": "title",
+                    "title": t_item,
+                    "chapter": None,
+                    "duration": dur,
+                    "name": f"{t_base_name} (Audio)",
+                    "job_mode": "audio",
+                })
+            else:
+                jobs.append({
+                    "type": "title",
+                    "title": t_item,
+                    "chapter": None,
+                    "duration": dur,
+                    "name": t_base_name,
+                    "job_mode": "audio" if audio_only else "video",
+                })
+        for (t_item, c_item) in chapter_jobs:
+            t_num = t_item.get("title_number", 1)
+            c_num = c_item.get("chapter_number", 1)
+            t_stem = t_item.get("custom_stem") or f"Title_{t_num:02d}"
+            c_name = c_item.get("custom_stem") or c_item.get("name") or f"Chapter {c_num:02d}"
+            ch_base = f"{t_stem} - {c_name}"
+            dur = float(c_item.get("duration", 0.0))
+            if extract_both:
+                jobs.append({
+                    "type": "chapter",
+                    "title": t_item,
+                    "chapter": c_item,
+                    "duration": dur,
+                    "name": f"{ch_base} (Video)",
+                    "job_mode": "video",
+                })
+                jobs.append({
+                    "type": "chapter",
+                    "title": t_item,
+                    "chapter": c_item,
+                    "duration": dur,
+                    "name": f"{ch_base} (Audio)",
+                    "job_mode": "audio",
+                })
+            else:
+                jobs.append({
+                    "type": "chapter",
+                    "title": t_item,
+                    "chapter": c_item,
+                    "duration": dur,
+                    "name": ch_base,
+                    "job_mode": "audio" if audio_only else "video",
+                })
+
+        # Sort jobs naturally by title number and chapter number
+        jobs.sort(key=lambda j: (
+            int(j["title"].get("title_number", 1)),
+            0 if j["type"] == "title" else int(j["chapter"].get("chapter_number", 1)),
+            0 if j.get("job_mode") == "video" else 1
+        ))
+
+        total   = len(jobs)
+        success = 0
+        errors  = 0
+        was_cancelled = False
+        was_timed_out = False
+        ripped_timeline_titles = set()
+
+        try:
+            os.makedirs(out_folder, exist_ok=True)
+        except Exception:
+            pass
+
+        created_folders = set()
+
+        # Calculate effective durations and batch progress spans
+        job_durations = []
+        for j in jobs:
+            d = float(j.get("duration", 0.0))
+            if d <= 0.0 and j.get("chapter"):
+                c = j["chapter"]
+                st = float(c.get("start_time", 0.0))
+                et = float(c.get("end_time", 0.0))
+                if et > st:
+                    d = et - st
+            if d <= 0.0 and j.get("title"):
+                t_obj = j["title"]
+                td = float(t_obj.get("duration", 0.0))
+                if td > 0.0:
+                    if j.get("type") == "chapter":
+                        cc = max(1, int(t_obj.get("chapter_count", 1)))
+                        d = td / cc
+                    else:
+                        d = td
+            job_durations.append(max(0.0, d))
+
+        valid_durs = [d for d in job_durations if d > 0.0]
+        if valid_durs:
+            fallback_dur = sum(valid_durs) / len(valid_durs)
+        else:
+            fallback_dur = 1.0
+
+        effective_durations = [d if d > 0.0 else fallback_dur for d in job_durations]
+        total_eff_dur = sum(effective_durations) if effective_durations else 1.0
+
+        job_spans = []
+        acc_dur = 0.0
+        for idx, d in enumerate(effective_durations):
+            start_pct = (acc_dur / total_eff_dur) * 100.0
+            acc_dur += d
+            end_pct = 100.0 if (idx == len(effective_durations) - 1) else (acc_dur / total_eff_dur) * 100.0
+            job_spans.append((start_pct, end_pct))
+
+        overall_progress_max = 0.0
+        completed_duration = 0.0
+        dvd_source = self._vcd_path.get().strip()
+        if not dvd_source and jobs:
+            first_t = jobs[0]["title"]
+            vobs = first_t.get("vob_files", [])
+            if vobs:
+                dvd_source = str(Path(vobs[0]).parent)
+            elif first_t.get("path"):
+                dvd_source = str(Path(first_t["path"]).parent)
+
+        # Inspect source and perform pre-flight HandBrake validation
+        dvd_insp = dvd_engine.inspect_dvd_source(dvd_source)
+        if dvd_source and not dvd_insp.is_accessible:
+            self.after(0, lambda m=dvd_insp.error_message: self._log.log(
+                f"DVD source warning: {m}", "warning"
+            ))
+
+        has_potential_hb_job = any(
+            (job.get("job_mode") != "audio" and not audio_only and output_format == "MP4")
+            for job in jobs
+        )
+        hb_val_res = None
+        hb_disabled_globally = False
+        if bool(self._handbrake) and os.path.isfile(self._handbrake) and has_potential_hb_job and dvd_source:
+            hb_val_res = dvd_engine.validate_handbrake_source(self._handbrake, dvd_source)
+            if not hb_val_res.success:
+                hb_disabled_globally = True
+                if hb_val_res.error_category == "zero_titles_found":
+                    self.after(0, lambda: self._log.log(
+                        "HandBrakeCLI scan found 0 valid title(s) on DVD source. Using FFmpeg for extraction.", "info"
+                    ))
+                else:
+                    err_detail = hb_val_res.error_message or "scan failed"
+                    self.after(0, lambda d=err_detail: self._log.log(
+                        f"HandBrakeCLI pre-flight validation failed ({d}). Using FFmpeg for extraction.", "info"
+                    ))
+            else:
+                self.after(0, lambda p=hb_val_res.working_source_path, n=hb_val_res.title_count: self._log.log(
+                    f"HandBrakeCLI validated ({n} titles found using '{p}').", "info"
+                ))
+
+        self._last_dvd_progress = 0.0
+
+        def update_dvd_progress_ui(p, status_text=None, lp=None, log_it=False):
+            safe_p = max(getattr(self, "_last_dvd_progress", 0.0), p)
+            self._last_dvd_progress = safe_p
+            self._progress_var.set(safe_p)
+            self._progress_pct.configure(text=f"{int(safe_p)}%")
+            self._taskbar_progress.set_value(int(safe_p), 100)
+            if status_text is not None:
+                self._progress_lbl.configure(text=status_text)
+            if log_it and lp:
+                self._log.log(lp, "info")
+
+        for i, job in enumerate(jobs):
+            j_type = job["type"]
+            t_item = job["title"]
+            c_item = job["chapter"]
+            job_name = job["name"]
+            j_dur = float(job.get("duration", 0.0))
+            job_start_pct, job_end_pct = job_spans[i]
+            job_span_pct = max(0.0, job_end_pct - job_start_pct)
+            job_eff_dur = effective_durations[i]
+            in_job_prog_max = 0.0
+
+            if create_title_folder:
+                if t_item.get("custom_stem"):
+                    raw_title_name = t_item["custom_stem"]
+                else:
+                    fname = t_item.get("filename", "")
+                    clean_fname = re.sub(r"\s*\(Main Feature\)", "", fname).strip()
+                    raw_title_name = clean_fname or f"Title {t_item.get('title_number', 1):02d}"
+                title_folder_name = sanitize_filename(raw_title_name, fallback=f"Title_{t_item.get('title_number', 1):02d}")
+                job_out_dir = os.path.join(out_folder, title_folder_name)
+                try:
+                    os.makedirs(job_out_dir, exist_ok=True)
+                except Exception:
+                    pass
+                created_folders.add(job_out_dir)
+            else:
+                job_out_dir = out_folder
+
+            if self._cancel_requested:
+                was_cancelled = True
+                break
+
+            overall_progress_max = max(overall_progress_max, job_start_pct)
+            proc_status_msg = t('content.rip_prog_proc').format(idx=i+1, total=total, name=job_name)
+            self.after(0, lambda p=overall_progress_max, s=proc_status_msg: update_dvd_progress_ui(p, status_text=s))
+
+            j_mode = job.get("job_mode", "audio" if audio_only else "video")
+            is_job_audio = (j_mode == "audio")
+
+            # Resolve audio track mapping for this title
+            title_num = int(t_item.get("title_number", 1))
+            raw_tracks = t_item.get("audio_tracks", [])
+            selected_track_id = self._dvd_selected_audio_tracks.get(title_num)
+            chosen_track = None
+            if selected_track_id:
+                for trk in raw_tracks:
+                    t_id = trk.track_id if isinstance(trk, dvd_engine.DVDAudioTrack) else trk.get("track_id")
+                    if t_id == selected_track_id:
+                        chosen_track = trk.to_dict() if isinstance(trk, dvd_engine.DVDAudioTrack) else trk
+                        break
+                if not chosen_track:
+                    errors += 1
+                    overall_progress_max = max(overall_progress_max, job_end_pct)
+                    err_msg = f"Requested audio track '{selected_track_id}' not found for Title {title_num}."
+                    self.after(0, lambda m=err_msg, p=overall_progress_max: (
+                        self._log.log(m, "error"),
+                        update_dvd_progress_ui(p)
+                    ))
+                    continue
+            elif raw_tracks:
+                first_trk = raw_tracks[0]
+                chosen_track = first_trk.to_dict() if isinstance(first_trk, dvd_engine.DVDAudioTrack) else first_trk
+
+            if is_job_audio and not chosen_track and raw_tracks:
+                chosen_track = raw_tracks[0].to_dict() if isinstance(raw_tracks[0], dvd_engine.DVDAudioTrack) else raw_tracks[0]
+
+            if is_job_audio and not chosen_track:
+                errors += 1
+                overall_progress_max = max(overall_progress_max, job_end_pct)
+                err_msg = f"No audio track available for Title {title_num}."
+                self.after(0, lambda m=err_msg, p=overall_progress_max: (
+                    self._log.log(m, "error"),
+                    update_dvd_progress_ui(p)
+                ))
+                continue
+
+            custom_audio_filename = None
+            if is_job_audio and extract_both:
+                target_ext = ".wav" if audio_format == "WAV" else ".mp3"
+                if chosen_track:
+                    lang_name = chosen_track.get("lang_name") or chosen_track.get("raw_lang_name")
+                    lang_code = (chosen_track.get("lang") or chosen_track.get("lang_code") or "").lower()
+                    trk_num = chosen_track.get("track_number") or chosen_track.get("hb_track_index", 1)
+                    if lang_name and lang_name not in ("Unknown", "und", ""):
+                        audio_tag = f"{lang_name} Audio"
+                    elif lang_code and lang_code not in ("und", "unknown", "qaa", ""):
+                        audio_tag = f"{lang_code.upper()} Audio"
+                    else:
+                        audio_tag = f"Audio Track {trk_num}"
+                else:
+                    audio_tag = "Audio"
+
+                if j_type == "title":
+                    t_stem = t_item.get("custom_stem") or f"Title_{title_num:02d}"
+                    custom_audio_filename = f"{t_stem} - {audio_tag}{target_ext}"
+                else:
+                    t_stem = t_item.get("custom_stem") or f"Title_{title_num:02d}"
+                    c_num = int(c_item.get("chapter_number", 1))
+                    c_custom = c_item.get("custom_stem") or c_item.get("name") or f"Chapter {c_num:02d}"
+                    c_tag = sanitize_filename(c_custom, fallback=f"Chapter_{c_num:02d}")
+                    custom_audio_filename = f"{t_stem} - {c_tag} - {audio_tag}{target_ext}"
+
+            can_use_hb = (
+                bool(self._handbrake)
+                and os.path.isfile(self._handbrake)
+                and not is_job_audio
+                and output_format == "MP4"
+                and not hb_disabled_globally
+                and (hb_val_res is not None and hb_val_res.success)
+            )
+
+            if can_use_hb:
+                map_ok, _, _, _, map_err = dvd_engine.resolve_handbrake_job_mapping(
+                    hb_val_res, t_item, c_item, chosen_track
+                )
+                if not map_ok:
+                    can_use_hb = False
+                    self.after(0, lambda j_n=job_name, err=map_err: self._log.log(
+                        f"HandBrake title/chapter mapping unavailable for {j_n} ({err}). Using FFmpeg fallback.", "info"
+                    ))
+
+            run_with_engine = "handbrake" if can_use_hb else "ffmpeg"
+            job_done = False
+            hb_failure_info = None
+
+            while not job_done:
+                temp_concat = None
+                out_path = None
+                cmd = None
+                is_hb = (run_with_engine == "handbrake")
+
+                try:
+                    if is_hb:
+                        cmd, out_path = dvd_engine.prepare_dvd_handbrake_rip_job(
+                            handbrake_path=self._handbrake,
+                            dvd_source=dvd_source,
+                            title_dict=t_item,
+                            chapter_dict=c_item,
+                            out_dir=job_out_dir,
+                            use_1080p=use_1080p,
+                            audio_track=chosen_track,
+                            val_res=hb_val_res,
+                            fps_mode=getattr(self.i18n, "fps_mode", "Passthrough"),
+                        )
+                    else:
+                        cand_vid = None
+                        if is_job_audio and extract_both:
+                            cand_vid = (c_item.get("last_ripped_video_path") if c_item else None) or t_item.get("last_ripped_video_path")
+
+                        if cand_vid and os.path.isfile(cand_vid) and os.path.getsize(cand_vid) > 0:
+                            cmd, out_path = dvd_engine.prepare_dvd_audio_from_video_job(
+                                ffmpeg_path=self._ffmpeg,
+                                local_video_path=cand_vid,
+                                title_dict=t_item,
+                                chapter_dict=c_item,
+                                out_dir=job_out_dir,
+                                audio_format=audio_format,
+                                audio_track=chosen_track,
+                                custom_output_filename=custom_audio_filename,
+                            )
+                        elif j_type == "title":
+                            cmd, out_path, temp_concat = dvd_engine.prepare_dvd_rip_job(
+                                ffmpeg_path=self._ffmpeg,
+                                dvd_source=dvd_source,
+                                title_dict=t_item,
+                                out_dir=job_out_dir,
+                                output_format=output_format,
+                                use_1080p=use_1080p,
+                                audio_only=is_job_audio,
+                                audio_format=audio_format,
+                                audio_track=chosen_track,
+                                custom_output_filename=custom_audio_filename,
+                                fps_mode=getattr(self.i18n, "fps_mode", "Passthrough"),
+                            )
+                        else:
+                            cmd, out_path, temp_concat = dvd_engine.prepare_dvd_chapter_rip_job(
+                                ffmpeg_path=self._ffmpeg,
+                                dvd_source=dvd_source,
+                                title_dict=t_item,
+                                chapter_dict=c_item,
+                                out_dir=job_out_dir,
+                                output_format=output_format,
+                                use_1080p=use_1080p,
+                                audio_only=is_job_audio,
+                                audio_format=audio_format,
+                                audio_track=chosen_track,
+                                custom_output_filename=custom_audio_filename,
+                                fps_mode=getattr(self.i18n, "fps_mode", "Passthrough"),
+                            )
+                except Exception as prep_ex:
+                    if is_hb and self._ffmpeg:
+                        hb_failure_info = f"HandBrake prep failed ({prep_ex})"
+                        self.after(0, lambda e=str(prep_ex): self._log.log(
+                            f"HandBrake prep failed ({e}), falling back to FFmpeg...", "warning"
+                        ))
+                        run_with_engine = "ffmpeg"
+                        continue
+                    errors += 1
+                    overall_progress_max = max(overall_progress_max, job_end_pct)
+                    err_msg = t('log.exc').format(err=str(prep_ex))
+                    if hb_failure_info:
+                        err_msg += f" | [HandBrake failure]: {hb_failure_info}"
+                    self.after(0, lambda msg=err_msg, p=overall_progress_max: (
+                        self._log.log(msg, "error"),
+                        update_dvd_progress_ui(p)
+                    ))
+                    break
+
+                out_basename = os.path.basename(out_path)
+                engine_tag = "HandBrakeCLI" if is_hb else "FFmpeg"
+                trk_desc = chosen_track.get("display_label", "") if chosen_track else ""
+                trk_info = f" [{trk_desc}]" if trk_desc else ""
+                self.after(0, lambda j_n=job_name, o_n=out_basename, eng=engine_tag, t_i=trk_info: self._log.log(
+                    f"[{eng}] {t('log.extracting').format(name=j_n, out=o_n)}{t_i}", "info"
+                ))
+
+                proc_timed_out = False
+                ffmpeg_init_secs = None
+                ffmpeg_base_secs = 0.0
+                ffmpeg_last_raw_secs = 0.0
+                try:
+                    extra_flags = get_priority_creation_flag(self.i18n.priority)
+                    proc = subprocess.Popen(
+                        cmd,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.STDOUT,
+                        text=True,
+                        encoding="utf-8",
+                        errors="replace",
+                        env=get_subprocess_env(),
+                        **get_subprocess_kwargs(extra_flags=extra_flags)
+                    )
+                    self._current_proc = proc
+                    set_process_priority(proc, priority_level=self.i18n.priority, low_io=(not is_job_audio))
+
+                    line_queue = queue.Queue()
+                    output_tail = collections.deque(maxlen=25)
+
+                    def read_stdout():
+                        try:
+                            for line in iter(proc.stdout.readline, ''):
+                                line_queue.put(line)
+                        except Exception:
+                            pass
+                        finally:
+                            try:
+                                proc.stdout.close()
+                            except Exception:
+                                pass
+                            line_queue.put(None)
+
+                    reader_t = threading.Thread(target=read_stdout, daemon=True)
+                    reader_t.start()
+
+                    last_io_time = time.time()
+                    last_progress_time = time.time()
+                    last_log_time = 0.0
+                    last_seen_frame = -1
+                    last_seen_raw_secs = -1.0
+                    last_seen_size_kb = -1
+                    last_seen_hb_pct = -1.0
+                    last_seen_hb_task = -1
+                    stall_warning_logged = False
+
+                    while True:
+                        if self._cancel_requested:
+                            kill_process_tree(proc, force=True)
+                            break
+
+                        now = time.time()
+                        io_stalled_secs = now - last_io_time
+                        prog_stalled_secs = now - last_progress_time
+
+                        if prog_stalled_secs >= 8.0 and not stall_warning_logged:
+                            stall_warning_logged = True
+                            frame_info = f" at frame {last_seen_frame}" if last_seen_frame >= 0 else ""
+                            self.after(0, lambda j_n=job_name, fi=frame_info, ps=int(prog_stalled_secs): self._log.log(
+                                f"[Disc Read Warning] Processing stalled{fi} on {j_n} ({ps}s without progress; physical disc sector or stream may be corrupted)...",
+                                "warning"
+                            ))
+
+                        if io_stalled_secs > DISC_READ_TIMEOUT_SECONDS or prog_stalled_secs > DISC_READ_TIMEOUT_SECONDS:
+                            proc_timed_out = True
+                            was_timed_out = True
+                            stalled_reason = f"stalled at frame {last_seen_frame}" if (last_seen_frame >= 0 and prog_stalled_secs > DISC_READ_TIMEOUT_SECONDS) else "no response"
+                            self.after(0, lambda j_n=job_name, sr=stalled_reason: self._log.log(
+                                f"{t('log.read_timeout').format(name=j_n, timeout=int(DISC_READ_TIMEOUT_SECONDS))} ({sr})",
+                                "warning"
+                            ))
+                            terminate_and_kill(proc, graceful_timeout=GRACEFUL_TERMINATE_TIMEOUT)
+                            break
+
+                        try:
+                            line = line_queue.get(timeout=0.2)
+                        except queue.Empty:
+                            if proc.poll() is not None:
+                                while not line_queue.empty():
+                                    rem = line_queue.get_nowait()
+                                    if rem is None:
+                                        break
+                                    rem_s = rem.strip()
+                                    if rem_s:
+                                        output_tail.append(rem_s)
+                                break
+                            continue
+
+                        if line is None:
+                            break
+
+                        last_io_time = time.time()
+                        line = line.strip()
+                        if line:
+                            output_tail.append(line)
+
+                        if is_hb:
+                            hb_match = re.search(r"Encoding:\s+task\s+(\d+)\s+of\s+(\d+),\s+([\d\.]+)\s*%", line)
+                            if hb_match:
+                                task_idx = max(1, int(hb_match.group(1)))
+                                task_total = max(1, int(hb_match.group(2)))
+                                cur_pct = float(hb_match.group(3))
+
+                                if task_idx > last_seen_hb_task or cur_pct > (last_seen_hb_pct + 0.01):
+                                    last_progress_time = time.time()
+                                    last_seen_hb_task = task_idx
+                                    last_seen_hb_pct = cur_pct
+                                    stall_warning_logged = False
+
+                                task_frac = ((task_idx - 1) + (cur_pct / 100.0)) / task_total
+                                task_frac = max(0.0, min(1.0, task_frac))
+                                in_job_prog_max = max(in_job_prog_max, task_frac)
+
+                                overall = job_start_pct + (in_job_prog_max * job_span_pct)
+                                overall = max(overall_progress_max, overall)
+                                overall = min(overall, 99.9)
+                                overall_progress_max = overall
+
+                                now = time.time()
+                                should_log = (now - last_log_time) >= 1.5
+                                if should_log:
+                                    last_log_time = now
+                                self.after(0, lambda p=overall, lp=line, log_it=should_log: update_dvd_progress_ui(
+                                    p, lp=lp, log_it=log_it
+                                ))
+                            elif any(err_kw in line.lower() for err_kw in ("error", "corrupt", "invalid")):
+                                if not any(bdmv in line.lower() for bdmv in ("bdmv\\index.bdmv", "bdmv/index.bdmv", "bdmv\\backup", "bdmv/backup")):
+                                    self.after(0, lambda l=line: self._log.log(l, "warning"))
+                        else:
+                            if line and ("frame=" in line or "speed=" in line or ("size=" in line and "time=" in line)):
+                                frame_match = re.search(r'frame=\s*(\d+)', line)
+                                time_match = re.search(r'time=(\d+):(\d+):(\d+\.?\d*)', line)
+                                size_match = re.search(r'size=\s*(\d+)kB', line)
+
+                                cur_frame = int(frame_match.group(1)) if frame_match else None
+                                cur_secs = None
+                                if time_match:
+                                    h, m, s = time_match.groups()
+                                    cur_secs = int(h) * 3600 + int(m) * 60 + float(s)
+                                cur_size_kb = int(size_match.group(1)) if size_match else None
+
+                                progress_advanced = False
+                                if cur_frame is not None and cur_frame > last_seen_frame:
+                                    last_seen_frame = cur_frame
+                                    progress_advanced = True
+                                if cur_secs is not None and cur_secs > (last_seen_raw_secs + 0.05):
+                                    last_seen_raw_secs = cur_secs
+                                    progress_advanced = True
+                                if cur_size_kb is not None and cur_size_kb > (last_seen_size_kb + 32):
+                                    last_seen_size_kb = cur_size_kb
+                                    progress_advanced = True
+
+                                if progress_advanced:
+                                    last_progress_time = time.time()
+                                    stall_warning_logged = False
+
+                                now = time.time()
+                                should_log = (now - last_log_time) >= 1.5
+                                if should_log and (now - last_progress_time) < 2.0:
+                                    last_log_time = now
+                                    self.after(0, lambda l=line: self._log.log(l, "info"))
+
+                                if time_match and job_eff_dur > 0:
+                                    raw_secs = cur_secs
+
+                                    if ffmpeg_init_secs is None:
+                                        if raw_secs >= job_eff_dur or raw_secs > 5.0:
+                                            ffmpeg_init_secs = raw_secs
+                                        else:
+                                            ffmpeg_init_secs = 0.0
+                                        ffmpeg_last_raw_secs = raw_secs
+
+                                    # Detect PTS reset / timestamp jump backwards across cells/VOBs
+                                    if raw_secs < (ffmpeg_last_raw_secs - 2.0):
+                                        seg_elapsed = max(0.0, ffmpeg_last_raw_secs - ffmpeg_init_secs)
+                                        ffmpeg_base_secs += seg_elapsed
+                                        ffmpeg_init_secs = raw_secs
+                                        ffmpeg_last_raw_secs = raw_secs
+                                    else:
+                                        ffmpeg_last_raw_secs = max(ffmpeg_last_raw_secs, raw_secs)
+
+                                    cur_seg_elapsed = max(0.0, raw_secs - ffmpeg_init_secs)
+                                    total_job_elapsed = ffmpeg_base_secs + cur_seg_elapsed
+
+                                    in_job_frac = min(1.0, max(0.0, total_job_elapsed / job_eff_dur))
+                                    in_job_prog_max = max(in_job_prog_max, in_job_frac)
+
+                                    overall = job_start_pct + (in_job_prog_max * job_span_pct)
+                                    overall = max(overall_progress_max, overall)
+                                    overall = min(overall, 99.9)
+                                    overall_progress_max = overall
+
+                                    self.after(0, lambda p=overall: update_dvd_progress_ui(p))
+                            elif any(err_kw in line.lower() for err_kw in ("error", "corrupt", "invalid")):
+                                self.after(0, lambda l=line: self._log.log(l, "warning"))
+
+                    try:
+                        proc.wait(timeout=2)
+                    except Exception:
+                        pass
+                    self._current_proc = None
+
+                    if temp_concat and os.path.exists(temp_concat):
+                        try:
+                            os.remove(temp_concat)
+                        except Exception:
+                            pass
+
+                    if self._cancel_requested:
+                        was_cancelled = True
+                        if out_path and os.path.exists(out_path):
+                            try:
+                                os.remove(out_path)
+                            except Exception:
+                                pass
+                        break
+
+                    if proc_timed_out:
+                        if is_hb and not self._cancel_requested and self._ffmpeg:
+                            hb_disabled_globally = True
+                            hb_cmd_str = " ".join(cmd) if cmd else ""
+                            hb_failure_info = f"HandBrakeCLI stalled/timed out after {int(DISC_READ_TIMEOUT_SECONDS)}s | Command: {hb_cmd_str}"
+                            self.after(0, lambda j_n=job_name, c=hb_cmd_str: self._log.log(
+                                f"HandBrakeCLI stalled on {j_n} (no progress for {int(DISC_READ_TIMEOUT_SECONDS)}s). Falling back to FFmpeg...", "warning"
+                            ))
+                            if out_path and os.path.exists(out_path):
+                                try:
+                                    os.remove(out_path)
+                                except Exception:
+                                    pass
+                            run_with_engine = "ffmpeg"
+                            continue
+
+                        if out_path and os.path.exists(out_path) and os.path.getsize(out_path) > 0:
+                            part_size = round(os.path.getsize(out_path) / 1024**2, 1)
+                            self.after(0, lambda n=out_basename, s=part_size: self._log.log(
+                                t('log.saved_partial').format(name=n, size=s), "warning"
+                            ))
+                        errors += 1
+                        overall_progress_max = max(overall_progress_max, job_end_pct)
+                        self.after(0, lambda p=overall_progress_max: update_dvd_progress_ui(p))
+                        job_done = True
+                        break
+
+                    if proc.returncode == 0 and out_path and os.path.exists(out_path) and os.path.getsize(out_path) > 0:
+                        expected_fmt = audio_format if is_job_audio else output_format
+                        is_valid, val_msg = dvd_engine.validate_ripped_media(
+                            ffprobe_path=self._ffprobe,
+                            file_path=out_path,
+                            is_audio_only=is_job_audio,
+                            expected_format=expected_fmt,
+                            selected_audio_track=chosen_track,
+                            expected_duration=j_dur,
+                            ffmpeg_path=self._ffmpeg,
+                        )
+                        if is_valid:
+                            size = round(os.path.getsize(out_path) / 1024**2, 1)
+                            success += 1
+                            if not is_job_audio:
+                                if j_type == "title":
+                                    t_item["last_ripped_video_path"] = out_path
+                                else:
+                                    c_item["last_ripped_video_path"] = out_path
+                            self.after(0, lambda n=out_basename, s=size: self._log.log(
+                                t('log.saved_ok').format(name=n, size=s), "success"
+                            ))
+                            job_done = True
+
+                            # DVD Chapter Timeline TXT Generation (only for complete title output)
+                            if generate_timeline and j_type == "title":
+                                t_key = t_item.get("title_number", i + 1)
+                                if t_key not in ripped_timeline_titles:
+                                    ripped_timeline_titles.add(t_key)
+                                    self._generate_dvd_timeline_file(out_path, out_basename)
+                        else:
+                            self.after(0, lambda m=val_msg: self._log.log(m, "warning"))
+                            if is_hb and not self._cancel_requested and self._ffmpeg:
+                                hb_disabled_globally = True
+                                hb_cmd_str = " ".join(cmd) if cmd else ""
+                                hb_failure_info = f"HandBrake output validation failed ({val_msg}) | Command: {hb_cmd_str}"
+                                self.after(0, lambda j_n=job_name, m=val_msg, c=hb_cmd_str: self._log.log(
+                                    f"HandBrake output validation failed for {j_n} ({m}). Command: {c}. Falling back to FFmpeg...", "warning"
+                                ))
+                                if out_path and os.path.exists(out_path):
+                                    try:
+                                        os.remove(out_path)
+                                    except Exception:
+                                        pass
+                                run_with_engine = "ffmpeg"
+                                continue
+
+                            if out_path and os.path.exists(out_path):
+                                try:
+                                    os.remove(out_path)
+                                except Exception:
+                                    pass
+                            errors += 1
+                            err_msg = f"{t('log.ffmpeg_err').format(name=job_name)} ({val_msg})"
+                            if hb_failure_info:
+                                err_msg += f" | [HandBrake failure]: {hb_failure_info}"
+                            self.after(0, lambda msg=err_msg: self._log.log(msg, "error"))
+                            job_done = True
+                    else:
+                        if is_hb and not self._cancel_requested and self._ffmpeg:
+                            hb_disabled_globally = True
+                            hb_cmd_str = " ".join(cmd) if cmd else ""
+                            clean_tail = [
+                                l for l in output_tail
+                                if not any(bdmv in l.lower() for bdmv in ("bdmv\\index.bdmv", "bdmv/index.bdmv", "bdmv\\backup", "bdmv/backup"))
+                            ]
+                            tail_snippet = " ; ".join(clean_tail[-3:]) if clean_tail else f"Exit code {proc.returncode}"
+                            hb_failure_info = f"Exit code {proc.returncode} ({tail_snippet}) | Command: {hb_cmd_str}"
+                            self.after(0, lambda j_n=job_name, rc=proc.returncode, c=hb_cmd_str, snip=tail_snippet: self._log.log(
+                                f"HandBrakeCLI returned code {rc} for {j_n} ({snip}). Command: {c}. Falling back to FFmpeg...", "warning"
+                            ))
+                            if out_path and os.path.exists(out_path):
+                                try:
+                                    os.remove(out_path)
+                                except Exception:
+                                    pass
+                            run_with_engine = "ffmpeg"
+                            continue
+
+                        errors += 1
+                        err_msg = t('log.ffmpeg_err').format(name=job_name)
+                        if hb_failure_info:
+                            err_msg += f" | [HandBrake failure]: {hb_failure_info}"
+                        self.after(0, lambda msg=err_msg: self._log.log(msg, "error"))
+                        job_done = True
+
+                except Exception as e:
+                    if temp_concat and os.path.exists(temp_concat):
+                        try:
+                            os.remove(temp_concat)
+                        except Exception:
+                            pass
+
+                    if is_hb and not self._cancel_requested and self._ffmpeg:
+                        hb_cmd_str = " ".join(cmd) if cmd else ""
+                        hb_failure_info = f"HandBrakeCLI exception ({e}) | Command: {hb_cmd_str}"
+                        self.after(0, lambda err=str(e), c=hb_cmd_str: self._log.log(
+                            f"HandBrakeCLI exception ({err}). Command: {c}. Falling back to FFmpeg...", "warning"
+                        ))
+                        if out_path and os.path.exists(out_path):
+                            try:
+                                os.remove(out_path)
+                            except Exception:
+                                pass
+                        run_with_engine = "ffmpeg"
+                        continue
+
+                    errors += 1
+                    err_msg = t('log.exc').format(err=str(e))
+                    if hb_failure_info:
+                        err_msg += f" | [HandBrake failure]: {hb_failure_info}"
+                    self.after(0, lambda msg=err_msg: self._log.log(msg, "error"))
+                    job_done = True
+
+            if not was_cancelled:
+                overall_progress_max = max(overall_progress_max, job_end_pct)
+                if i == total - 1 and not self._cancel_requested:
+                    overall_progress_max = 100.0
+                self.after(0, lambda p=overall_progress_max: update_dvd_progress_ui(p))
+
+        effective_done_folder = list(created_folders)[0] if len(created_folders) == 1 else out_folder
+
+        def _finish_rip():
+            self._rip_done(
+                total, success, errors, effective_done_folder,
+                cancelled=(was_cancelled or self._cancel_requested),
+                timed_out=was_timed_out
+            )
+
+        if threading.current_thread() is threading.main_thread():
+            _finish_rip()
+        else:
+            try:
+                self.after(0, _finish_rip)
+            except Exception:
+                _finish_rip()
+
+    def _generate_dvd_timeline_file(self, media_path: str, media_basename: str):
+        """Generates chapter timeline file for the ripped complete title media file."""
+        if not self._ffprobe:
+            self.after(0, lambda: self._log.log(
+                t('log.timeline_ffprobe_missing'), "warning"
+            ))
+            return
+
+        ok, txt_file, err, count = dvd_engine.generate_chapter_timeline_file(
+            ffprobe_path=self._ffprobe,
+            media_path=media_path
+        )
+        if ok and txt_file:
+            txt_base = os.path.basename(txt_file)
+            self.after(0, lambda tb=txt_base: self._log.log(
+                t('log.timeline_done').format(name=tb), "success"
+            ))
+        else:
+            if err and "No chapter metadata" in err:
+                self.after(0, lambda mb=media_basename: self._log.log(
+                    t('log.timeline_no_chapters').format(name=mb), "warning"
+                ))
+            else:
+                self.after(0, lambda mb=media_basename, e=err: self._log.log(
+                    t('log.timeline_failed').format(name=mb, err=e or "Unknown error"), "warning"
+                ))
+
+    def _rip_dvd_thread(self, titles, out_folder, output_format, use_1080p=False, audio_only=False, audio_format="WAV", generate_timeline=False):
+        """Legacy compatibility wrapper for whole-title DVD ripping."""
+        return self._rip_dvd_unified_thread(titles, [], out_folder, output_format, use_1080p, audio_only, audio_format, generate_timeline=generate_timeline)
+
+    def _rip_dvd_chapters_thread(self, chapter_jobs, out_folder, output_format, use_1080p=False, audio_only=False, audio_format="WAV", generate_timeline=False):
+        """Legacy compatibility wrapper for chapter-based DVD ripping."""
+        return self._rip_dvd_unified_thread([], chapter_jobs, out_folder, output_format, use_1080p, audio_only, audio_format, generate_timeline=generate_timeline)
 
     def _rip_done(self, total, success, errors, out_folder, cancelled=False, timed_out=False):
         self._ripping = False
@@ -4400,10 +6969,51 @@ class VCDRipperApp(tk.Tk):
 
     # ── Canvas scroll helpers ─────────────────
     def _on_list_configure(self, _):
-        self._canvas.configure(scrollregion=self._canvas.bbox("all"))
+        if getattr(self, "_list_cfg_job", None):
+            try:
+                self.after_cancel(self._list_cfg_job)
+            except Exception:
+                pass
+        def _apply_bbox():
+            self._list_cfg_job = None
+            if hasattr(self, "_canvas") and self._canvas.winfo_exists():
+                self._canvas.configure(scrollregion=self._canvas.bbox("all"))
+        self._list_cfg_job = self.after(16, _apply_bbox)
 
     def _on_canvas_configure(self, event):
-        self._canvas.itemconfig(self._canvas_window, width=event.width)
+        if getattr(self, "_last_canvas_width", None) == event.width:
+            return
+        self._last_canvas_width = event.width
+        if getattr(self, "_canvas_resize_job", None):
+            try:
+                self.after_cancel(self._canvas_resize_job)
+            except Exception:
+                pass
+            self._canvas_resize_job = None
+
+        # Immediate sync if canvas_window is uninitialized (0 or <=1) so layout renders without blank frames
+        if hasattr(self, "_canvas") and self._canvas.winfo_exists() and hasattr(self, "_canvas_window"):
+            try:
+                cur_item_w = int(float(self._canvas.itemcget(self._canvas_window, "width")))
+            except Exception:
+                cur_item_w = 0
+            if cur_item_w <= 1 and event.width > 1:
+                try:
+                    self._canvas.itemconfig(self._canvas_window, width=event.width)
+                except Exception:
+                    pass
+
+        def _apply():
+            self._canvas_resize_job = None
+            if hasattr(self, "_canvas") and self._canvas.winfo_exists() and hasattr(self, "_canvas_window"):
+                try:
+                    w = self._canvas.winfo_width()
+                    if w > 1:
+                        self._last_canvas_width = w
+                        self._canvas.itemconfig(self._canvas_window, width=w)
+                except Exception:
+                    pass
+        self._canvas_resize_job = self.after(16, _apply)
 
     def _on_mousewheel(self, event):
         self._on_global_mousewheel(event)
@@ -4540,9 +7150,15 @@ class VCDRipperApp(tk.Tk):
         if self._ripping:
             self._stop_rip()
 
+        if getattr(self, "_scanning", False):
+            self._scanning = False
+            if hasattr(self, "_scan_btn"):
+                self._scan_btn.configure_state(True)
+
         self._videos.clear()
         self._cards.clear()
         self._selected_indices.clear()
+        self._selected_chapters.clear()
         self._batch_base_name = "Track"
 
         self._clear_list()
@@ -4550,10 +7166,7 @@ class VCDRipperApp(tk.Tk):
             self._empty_frame.pack(fill="both", expand=True, pady=100)
 
         self._video_count_badge.configure(text=t('content.badge_empty'))
-        self._sel_count_lbl.configure(
-            text=t('selection.count').format(n=0, total=0),
-            fg=COLORS["text_muted"]
-        )
+        self._update_sel_count()
 
         # Reset main ripping progress
         self._progress_var.set(0)
@@ -4582,6 +7195,11 @@ class VCDRipperApp(tk.Tk):
     # ── Drive eject & Reset ───────────────────
     def _clear_disc_info(self):
         """Reset and clear all scanned disc tracks and drive info UI."""
+        if getattr(self, "_scanning", False):
+            self._scanning = False
+            if hasattr(self, "_scan_btn"):
+                self._scan_btn.configure_state(True)
+
         self._taskbar_progress.reset()
         self._videos.clear()
         self._cards.clear()
@@ -4606,6 +7224,11 @@ class VCDRipperApp(tk.Tk):
     def _eject_disc(self, drive_to_eject=None):
         """Eject the disc from the detected or specified optical drive."""
         if self._ripping:
+            if not messagebox.askyesno(
+                t('header.title'),
+                "Ripping is currently in progress. Are you sure you want to stop ripping and eject the disc?"
+            ):
+                return
             self._stop_rip()
 
         # Determine drive letter
@@ -4666,11 +7289,11 @@ class VCDRipperApp(tk.Tk):
                         f".Namespace(17).ParseName('{drive_letter}:').InvokeVerb('Eject')"
                     )
                     proc = subprocess.run(
-                        ["powershell", "-NoProfile", "-NonInteractive",
+                        ["powershell", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden",
                          "-Command", ps_cmd],
                         env=get_subprocess_env(),
                         capture_output=True,
-                        creationflags=subprocess.CREATE_NO_WINDOW
+                        **get_subprocess_kwargs()
                     )
                     if proc.returncode == 0:
                         ejected = True
@@ -4696,7 +7319,7 @@ class VCDRipperApp(tk.Tk):
         set_window_icon(window)
 
     def _batch_rename(self):
-        """Open a batch rename dialog for all scanned files."""
+        """Open a batch rename dialog for all scanned files (supporting both DVD titles/chapters and VCD tracks)."""
         if not self._videos:
             messagebox.showinfo(t('batch.no_files_title'), t('batch.no_files_msg'))
             return
@@ -4704,7 +7327,7 @@ class VCDRipperApp(tk.Tk):
         dlg = tk.Toplevel(self)
         dlg.title(t('batch.title'))
         dlg.configure(bg=COLORS["bg_panel"])
-        dlg.geometry(f"{scale_val(650)}x{scale_val(600)}")
+        dlg.geometry(f"{scale_val(760)}x{scale_val(600)}")
         self._set_window_icon(dlg)
         dlg.grab_set()
 
@@ -4772,6 +7395,47 @@ class VCDRipperApp(tk.Tk):
                              bd=4, width=5)
         start_ent.pack(side="left")
 
+        # ── Collect Items (Unified VCD / DVD) ─────────────
+        batch_items = []
+        if self._source_type == "DVD":
+            for t_idx, v in enumerate(self._videos):
+                t_num = v.get("title_number", t_idx + 1)
+                t_stem = v.get("custom_stem") or f"Title_{t_num:02d}"
+                batch_items.append({
+                    "type": "title",
+                    "title_idx": t_idx,
+                    "chapter_num": None,
+                    "tag": t('batch.tag_title'),
+                    "label": t('batch.title_item').format(n=t_num),
+                    "current_stem": t_stem,
+                    "target": v,
+                })
+                for ch in v.get("chapters_data", []):
+                    c_num = int(ch.get("chapter_number", 1))
+                    c_stem = ch.get("custom_stem") or ch.get("name") or f"Chapter {c_num:02d}"
+                    batch_items.append({
+                        "type": "chapter",
+                        "title_idx": t_idx,
+                        "chapter_num": c_num,
+                        "tag": t('batch.tag_chapter'),
+                        "label": f"  T{t_num:02d} Ch {c_num:02d}:",
+                        "current_stem": c_stem,
+                        "target": ch,
+                        "parent_title": v,
+                    })
+        else:
+            for i, info in enumerate(self._videos):
+                current_stem = info.get("custom_stem", Path(info["filename"]).stem)
+                batch_items.append({
+                    "type": "track",
+                    "title_idx": i,
+                    "chapter_num": None,
+                    "tag": t('batch.tag_track'),
+                    "label": t('batch.track').format(n=i + 1),
+                    "current_stem": current_stem,
+                    "target": info,
+                })
+
         # ── Scrollable file list ──────────────────────────
         scroll_frame = tk.Frame(dlg, bg=COLORS["bg_panel"])
         scroll_frame.pack(fill="both", expand=True, padx=24, pady=(0, 8))
@@ -4788,38 +7452,46 @@ class VCDRipperApp(tk.Tk):
         inner.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
         canvas.bind("<Configure>", lambda e: canvas.itemconfig(canvas.find_all()[0], width=e.width) if canvas.find_all() else None)
 
-        total = len(self._videos)
+        total = len(batch_items)
         pad_width = 3 if total > 99 else 2
 
-        entry_vars = []     # full-name entries (manual mode)
-        suffix_vars = []    # suffix entries (seq mode)
-        row_frames = []
-        manual_widgets = []   # (track_lbl, name_entry)
-        seq_widgets = []      # (num_lbl, suffix_lbl, suffix_entry)
+        entry_vars = []       # full-name entries (manual mode)
+        suffix_vars = []      # suffix entries (seq mode)
+        preview_labels = []   # live preview labels
+        manual_widgets = []   # (tag_lbl, trk_lbl, name_ent)
+        seq_widgets = []      # (tag_lbl, num_lbl, suf_lbl, suf_ent)
 
-        for i, info in enumerate(self._videos):
+        for i, item in enumerate(batch_items):
             row = tk.Frame(inner, bg=COLORS["bg_card"],
                            highlightbackground=COLORS["border"], highlightthickness=1)
             row.pack(fill="x", pady=3)
-            row_frames.append(row)
 
-            # ── Manual mode widgets ──
-            trk_lbl = tk.Label(
-                row, text=t('batch.track').format(n=i+1),
-                font=FONTS["badge"], bg=COLORS["bg_card"],
-                fg=COLORS["text_muted"], width=8
+            # Type tag badge: [Title] cyan, [Chapter] accent, [Track] cyan
+            tag_color = COLORS["cyan"] if item["type"] in ("title", "track") else COLORS["accent"]
+            tag_lbl = tk.Label(
+                row, text=item["tag"],
+                font=FONTS["small_bold"], bg=COLORS["bg_card"],
+                fg=tag_color, width=9, anchor="w"
             )
-            current_stem = info.get("custom_stem", Path(info["filename"]).stem)
-            name_var = tk.StringVar(value=current_stem)
+
+            # Item label
+            trk_lbl = tk.Label(
+                row, text=item["label"],
+                font=FONTS["badge"], bg=COLORS["bg_card"],
+                fg=COLORS["text_primary"], width=13, anchor="w"
+            )
+
+            # Manual entry
+            name_var = tk.StringVar(value=item["current_stem"])
             entry_vars.append(name_var)
             name_ent = tk.Entry(
                 row, textvariable=name_var, font=FONTS["body"],
                 bg=COLORS["bg_dark"], fg=COLORS["text_primary"],
-                insertbackground=COLORS["accent"], relief="flat", bd=6
+                insertbackground=COLORS["accent"], relief="flat", bd=4, width=20
             )
-            manual_widgets.append((trk_lbl, name_ent))
+            manual_widgets.append((tag_lbl, trk_lbl, name_ent))
 
-            # ── Sequential mode widgets ──
+            # Sequential mode widgets
             try:
                 start_idx = int(start_var.get())
             except ValueError:
@@ -4840,47 +7512,82 @@ class VCDRipperApp(tk.Tk):
             suf_ent = tk.Entry(
                 row, textvariable=suf_var, font=FONTS["body"],
                 bg=COLORS["bg_dark"], fg=COLORS["text_primary"],
-                insertbackground=COLORS["accent"], relief="flat", bd=6
+                insertbackground=COLORS["accent"], relief="flat", bd=4, width=16
             )
-            seq_widgets.append((num_lbl, suf_lbl, suf_ent))
+            seq_widgets.append((tag_lbl, num_lbl, suf_lbl, suf_ent))
 
-        def _update_seq_numbers(*_):
-            """Recalculate sequential number labels."""
+            # Live preview label
+            prev_lbl = tk.Label(
+                row, text="",
+                font=FONTS["mono"], bg=COLORS["bg_card"],
+                fg=COLORS["text_secondary"], anchor="w", width=26
+            )
+            prev_lbl.pack(side="right", padx=(6, 12), pady=6)
+            preview_labels.append(prev_lbl)
+
+        def _update_previews(*_):
+            """Recalculate sequential numbers and live preview for each item."""
             try:
                 start_idx = int(start_var.get())
             except ValueError:
                 start_idx = 1
+            base = base_var.get().strip()
             pw = 3 if total > 99 else 2
+            is_seq = seq_enabled.get()
+
             for i in range(total):
-                num_lbl_i = seq_widgets[i][0]
-                num_lbl_i.configure(text=str(start_idx + i).zfill(pw))
+                num_str = str(start_idx + i).zfill(pw)
+                seq_widgets[i][1].configure(text=num_str)
+
+                if is_seq:
+                    suf = suffix_vars[i].get().strip()
+                    if base and suf:
+                        p_stem = f"{base} {num_str} - {suf}"
+                    elif base:
+                        p_stem = f"{base} {num_str}"
+                    elif suf:
+                        p_stem = f"{num_str} - {suf}"
+                    else:
+                        p_stem = num_str
+                else:
+                    p_stem = entry_vars[i].get().strip() or batch_items[i]["current_stem"]
+
+                clean = sanitize_filename(p_stem, fallback=f"Item_{i+1}")
+                preview_labels[i].configure(text=f"→ {clean}")
 
         def _toggle_mode(*_):
             """Switch between manual and sequential layouts."""
             is_seq = seq_enabled.get()
             for i in range(total):
-                trk_lbl, name_ent = manual_widgets[i]
-                num_lbl, suf_lbl, suf_ent = seq_widgets[i]
+                tag_m, trk_lbl, name_ent = manual_widgets[i]
+                tag_s, num_lbl, suf_lbl, suf_ent = seq_widgets[i]
                 # Hide all first
-                for w in (trk_lbl, name_ent, num_lbl, suf_lbl, suf_ent):
+                for w in (tag_m, trk_lbl, name_ent, tag_s, num_lbl, suf_lbl, suf_ent):
                     w.pack_forget()
+
                 if is_seq:
-                    num_lbl.pack(side="left", padx=(10, 6), pady=8)
-                    suf_lbl.pack(side="left", padx=(0, 4), pady=8)
-                    suf_ent.pack(side="left", fill="x", expand=True, padx=(0, 10), pady=8)
+                    tag_s.pack(side="left", padx=(10, 4), pady=6)
+                    num_lbl.pack(side="left", padx=(0, 6), pady=6)
+                    suf_lbl.pack(side="left", padx=(0, 4), pady=6)
+                    suf_ent.pack(side="left", fill="x", expand=True, padx=(0, 8), pady=6)
                 else:
-                    trk_lbl.pack(side="left", padx=(10, 6), pady=8)
-                    name_ent.pack(side="left", fill="x", expand=True, padx=(0, 10), pady=8)
-            # Enable/disable config fields
+                    tag_m.pack(side="left", padx=(10, 4), pady=6)
+                    trk_lbl.pack(side="left", padx=(0, 6), pady=6)
+                    name_ent.pack(side="left", fill="x", expand=True, padx=(0, 8), pady=6)
+
             state = "normal" if is_seq else "disabled"
             base_ent.configure(state=state)
             start_ent.configure(state=state)
-            if is_seq:
-                _update_seq_numbers()
+            _update_previews()
 
-        # Bind toggle & number updates
+        # Wire live preview triggers
         seq_enabled.trace_add("write", _toggle_mode)
-        start_var.trace_add("write", _update_seq_numbers)
+        base_var.trace_add("write", _update_previews)
+        start_var.trace_add("write", _update_previews)
+        for var in entry_vars:
+            var.trace_add("write", _update_previews)
+        for var in suffix_vars:
+            var.trace_add("write", _update_previews)
 
         # Initialize in manual mode
         _toggle_mode()
@@ -4890,37 +7597,45 @@ class VCDRipperApp(tk.Tk):
         btn_row.pack(fill="x", padx=24, pady=(4, 20))
 
         def apply_all():
-            if seq_enabled.get():
-                base = base_var.get().strip()
-                try:
-                    start_idx = int(start_var.get())
-                except ValueError:
-                    start_idx = 1
-                pw = 3 if total > 99 else 2
-                for i in range(total):
-                    num = str(start_idx + i).zfill(pw)
+            is_seq = seq_enabled.get()
+            base = base_var.get().strip()
+            try:
+                start_idx = int(start_var.get())
+            except ValueError:
+                start_idx = 1
+            pw = 3 if total > 99 else 2
+
+            for i, item in enumerate(batch_items):
+                if is_seq:
+                    num_str = str(start_idx + i).zfill(pw)
                     suffix = suffix_vars[i].get().strip()
                     if base and suffix:
-                        raw_stem = f"{base} {num} - {suffix}"
+                        raw_stem = f"{base} {num_str} - {suffix}"
                     elif base:
-                        raw_stem = f"{base} {num}"
+                        raw_stem = f"{base} {num_str}"
                     elif suffix:
-                        raw_stem = f"{num} - {suffix}"
+                        raw_stem = f"{num_str} - {suffix}"
                     else:
-                        raw_stem = num
-                    new_stem = sanitize_filename(raw_stem, fallback=f"Track_{num}")
-                    if i < len(self._videos):
-                        self._videos[i]["custom_stem"] = new_stem
-                        if i < len(self._cards):
-                            self._cards[i]._filename_lbl.configure(text=f"📼  {new_stem}")
-            else:
-                for i, var in enumerate(entry_vars):
-                    raw_stem = var.get().strip()
-                    if raw_stem and i < len(self._videos):
-                        new_stem = sanitize_filename(raw_stem, fallback=f"Track_{i+1}")
-                        self._videos[i]["custom_stem"] = new_stem
-                        if i < len(self._cards):
-                            self._cards[i]._filename_lbl.configure(text=f"📼  {new_stem}")
+                        raw_stem = num_str
+                else:
+                    raw_stem = entry_vars[i].get().strip()
+
+                fallback_prefix = "Title" if item["type"] == "title" else ("Chapter" if item["type"] == "chapter" else "Track")
+                clean_stem = sanitize_filename(raw_stem, fallback=f"{fallback_prefix}_{i+1}")
+
+                if item["type"] in ("title", "track"):
+                    item["target"]["custom_stem"] = clean_stem
+                    card_idx = item["title_idx"]
+                    if card_idx < len(self._cards):
+                        self._cards[card_idx]._filename_lbl.configure(text=f"📼  {clean_stem}")
+                elif item["type"] == "chapter":
+                    item["target"]["custom_stem"] = clean_stem
+                    item["target"]["name"] = clean_stem
+                    card_idx = item["title_idx"]
+                    c_num = item["chapter_num"]
+                    if card_idx < len(self._cards):
+                        self._cards[card_idx].update_chapter_name_display(c_num, clean_stem)
+
             self._log.log(t('log.batch_renamed').format(total=total), "success")
             dlg.destroy()
 
@@ -4974,25 +7689,45 @@ class VCDRipperApp(tk.Tk):
         d = self._vcd_path.get()
         if d:
             drive_letter = d[0].upper()
-            self._drive_lbl.configure(text=t('header.vcd_on').format(drive=drive_letter))
+            if self._videos:
+                self._detect_label.configure(text=t('drive.detected'), fg=COLORS["cyan"])
+            elif self._source_type == "DVD":
+                self._detect_label.configure(text=t('drive.detect_dvd'), fg=COLORS["success"])
+            elif self._source_type == "VCD":
+                self._detect_label.configure(text=t('drive.detect_vcd'), fg=COLORS["success"])
+            else:
+                self._detect_label.configure(text=t('drive.detect_disc'), fg=COLORS["success"])
+
+            if self._source_type == "DVD":
+                self._drive_lbl.configure(text=t('header.dvd_on').format(drive=drive_letter))
+                self._scan_btn.set_text(t('source.scan_dvd'), icon="🔍")
+            elif self._source_type == "VCD":
+                self._drive_lbl.configure(text=t('header.vcd_on').format(drive=drive_letter))
+                self._scan_btn.set_text(t('source.scan_vcd'), icon="🔍")
+            else:
+                self._drive_lbl.configure(text=t('header.disc_on').format(drive=drive_letter))
+                self._scan_btn.set_text(t('source.scan'), icon="🔍")
             self._detected_drive_lbl.configure(text=t('drive.drive_label').format(drive=drive_letter))
-            self._detect_label.configure(text=t('drive.folder_selected') if is_vcd_folder(d) else t('drive.detect_vcd'))
         else:
             self._drive_lbl.configure(text=t('header.no_disc'))
-            self._detect_label.configure(text=t('drive.insert_vcd'))
+            self._detect_label.configure(text=t('drive.insert_disc'))
+            self._scan_btn.set_text(t('source.scan'), icon="🔍")
             
         self._source_section_lbl.configure(text=t('source.title'))
         self._browse_btn.set_text(t('source.browse'), icon="📁")
-        self._scan_btn.set_text(t('source.scan'), icon="🔍")
         
         self._sel_section_lbl.configure(text=t('selection.title'))
-        self._sel_all_btn.set_text(t('selection.all'), icon="☑")
-        self._sel_none_btn.set_text(t('selection.none'), icon="☐")
+        if hasattr(self, "_dvd_mode_title_rb"):
+            self._dvd_mode_title_rb.configure(text=t('selection.mode_title'))
+        if hasattr(self, "_dvd_mode_chaps_rb"):
+            self._dvd_mode_chaps_rb.configure(text=t('selection.mode_chapters'))
         self._update_sel_count()
         
         self._format_section_lbl.configure(text=t('format.title'))
         self._video_mode_rb.configure(text=t('format.video_mode'))
         self._audio_mode_rb.configure(text=t('format.audio_mode'))
+        if hasattr(self, "_both_mode_rb"):
+            self._both_mode_rb.configure(text=t('format.both_mode'))
         self._video_fmt_lbl.configure(text=t('format.video_lbl'))
         self._audio_fmt_lbl.configure(text=t('format.audio_lbl'))
         
@@ -5007,10 +7742,24 @@ class VCDRipperApp(tk.Tk):
         self._res_title_lbl.configure(text=t('format.res_title'))
         self._res_orig_rb.configure(text=t('format.res_orig'))
         self._res_1080p_rb.configure(text=t('format.res_1080p'))
+
+        if hasattr(self, "_audio_track_lbl"):
+            self._audio_track_lbl.configure(text=t('format.audio_track_lbl'))
+        if hasattr(self, "_target_title_lbl"):
+            self._target_title_lbl.configure(text=t('format.target_title_lbl'))
+        if hasattr(self, "_update_audio_track_selector"):
+            self._update_audio_track_selector()
+
+        if hasattr(self, "_update_format_greyout"):
+            self._update_format_greyout()
         
         self._output_section_lbl.configure(text=t('output.title'))
         self._choose_folder_btn.set_text(t('output.choose'), icon="💾")
+        if hasattr(self, "_dvd_title_folder_chk"):
+            self._dvd_title_folder_chk.configure(text=t('output.dvd_title_folder'))
         self._auto_open_chk.configure(text=t('output.auto_open'))
+        if hasattr(self, "_dvd_timeline_chk"):
+            self._dvd_timeline_chk.configure(text=t('output.dvd_timeline'))
         
         self._rip_btn.set_text(t('rip.start'), icon="⚡")
         self._stop_btn.set_text(t('rip.stop'), icon="⏹")
@@ -5019,8 +7768,10 @@ class VCDRipperApp(tk.Tk):
         total = len(self._videos)
         if total == 0:
             self._video_count_badge.configure(text=t('content.badge_empty'))
+        elif self._source_type == "DVD":
+            self._video_count_badge.configure(text=t('content.badge_titles').format(n=total))
         else:
-            self._video_count_badge.configure(text=t('content.badge').format(n=total))
+            self._video_count_badge.configure(text=t('content.badge_tracks').format(n=total))
             
         if hasattr(self, "_empty_title_lbl") and self._empty_title_lbl.winfo_exists():
             self._empty_title_lbl.configure(text=t('content.empty_title'))

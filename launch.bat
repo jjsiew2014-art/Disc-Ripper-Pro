@@ -1,10 +1,10 @@
 @echo off
-title VCD Ripper Pro - Launcher
+title Disc Ripper Pro - Launcher
 color 0B
 
 echo.
 echo  ╔══════════════════════════════════════╗
-echo  ║        VCD Ripper Pro v1.0.0         ║
+echo  ║        Disc Ripper Pro v2.0.0        ║
 echo  ║   Powered by Python + FFmpeg         ║
 echo  ╚══════════════════════════════════════╝
 echo.
@@ -66,7 +66,7 @@ if errorlevel 1 (
     )
 )
 
-echo  Launching VCD Ripper Pro...
+echo  Launching Disc Ripper Pro...
 echo.
 %PYTHON_EXE% "%~dp0vcd_ripper.py"
 

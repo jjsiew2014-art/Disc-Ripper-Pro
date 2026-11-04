@@ -69,6 +69,7 @@ bin/
 
 # ── Runtime, Config & Temporary Files ─────────
 config.json
+scratch/
 *.log
 *.tmp
 *.bak

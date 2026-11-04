@@ -25,6 +25,7 @@ import tkinter as tk
 
 import disc_detector
 import dvd_engine
+import dvd_diagnostics
 import vcd_ripper
 
 
@@ -156,23 +157,25 @@ class TestDiscRipperProV2(unittest.TestCase):
     #  1. Application Identity Verification
     # ─────────────────────────────────────────────
     def test_01_app_identity_metadata(self):
-        """Verify APP_NAME is Disc Ripper Pro and APP_VERSION is 2.0.0."""
+        """Verify APP_NAME is Disc Ripper Pro and APP_VERSION is 2.0.4."""
         self.assertEqual(vcd_ripper.APP_NAME, "Disc Ripper Pro")
-        self.assertEqual(vcd_ripper.APP_VERSION, "2.0.0")
+        self.assertEqual(vcd_ripper.APP_VERSION, "2.0.4")
         self.assertIn("Disc_Ripper_Pro", vcd_ripper.SINGLE_INSTANCE_MUTEX_NAME)
-        self.assertEqual(vcd_ripper.APP_USER_MODEL_ID, "jjsiew.discripperpro.2.0.0")
+        self.assertEqual(vcd_ripper.APP_USER_MODEL_ID, "jjsiew.discripperpro.2.0.4")
 
     def test_02_localization_titles(self):
         """Verify localization dictionary and json titles read Disc Ripper Pro."""
         self.assertEqual(vcd_ripper.TRANSLATIONS["en"]["header"]["title"], "Disc Ripper Pro")
         self.assertEqual(vcd_ripper.TRANSLATIONS["zh_CN"]["header"]["title"], "Disc Ripper Pro")
+        self.assertEqual(vcd_ripper.TRANSLATIONS["zh_TW"]["header"]["title"], "Disc Ripper Pro")
         # Check external json files
-        en_path = PROJECT_ROOT / "en.json"
-        if en_path.exists():
-            import json
-            with open(en_path, "r", encoding="utf-8") as f:
-                en_data = json.load(f)
-            self.assertEqual(en_data["header"]["title"], "Disc Ripper Pro")
+        for fname in ("en.json", "zh-CN.json", "zh-TW.json"):
+            l_path = PROJECT_ROOT / fname
+            if l_path.exists():
+                import json
+                with open(l_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                self.assertEqual(data["header"]["title"], "Disc Ripper Pro")
 
     # ─────────────────────────────────────────────
     #  2. Automatic Disc Type Detection
@@ -520,7 +523,7 @@ class TestDiscRipperProV2(unittest.TestCase):
 
             self.assertEqual(app.title(), "Disc Ripper Pro")
             self.assertEqual(app._title_lbl.cget("text"), "Disc Ripper Pro")
-            self.assertEqual(app._version_lbl.cget("text"), "v2.0.0")
+            self.assertEqual(app._version_lbl.cget("text"), "v2.0.4")
 
             # Test DVD source switching hides DAT
             app._source_type = "DVD"
@@ -2953,9 +2956,9 @@ class TestDVDAudioTrackSelection(unittest.TestCase):
 # ─────────────────────────────────────────────────────────────
 class TestUIEnhancementsAndBugFixes(unittest.TestCase):
     def test_01_version_number_v2_0_0(self):
-        """Verify version number is strictly 2.0.0."""
-        self.assertEqual(vcd_ripper.APP_VERSION, "2.0.0")
-        self.assertEqual(vcd_ripper.APP_USER_MODEL_ID, "jjsiew.discripperpro.2.0.0")
+        """Verify version number is strictly 2.0.4."""
+        self.assertEqual(vcd_ripper.APP_VERSION, "2.0.4")
+        self.assertEqual(vcd_ripper.APP_USER_MODEL_ID, "jjsiew.discripperpro.2.0.4")
 
     def test_02_scale_change_preserves_scanned_videos_and_chapters(self):
         """Verify scale switching preserves video cards, selections, and chapters without clearing."""
@@ -5455,6 +5458,10 @@ class TestDVDChapterTimelineGeneration(unittest.TestCase):
             app.i18n.switch("zh_CN")
             app._refresh_ui()
             self.assertEqual(app._dvd_timeline_chk.cget("text"), "生成章节时间轴文件 (.txt)")
+
+            app.i18n.switch("zh_TW")
+            app._refresh_ui()
+            self.assertEqual(app._dvd_timeline_chk.cget("text"), "產生章節時間軸檔案 (.txt)")
         finally:
             app.destroy()
 
@@ -5681,6 +5688,2786 @@ class TestWindowScalingAndMaximizeRestoreLayoutFixes(unittest.TestCase):
             self.assertEqual(app.state(), "zoomed")
         finally:
             app.destroy()
+
+
+
+
+class TestTraditionalChineseLocalization(unittest.TestCase):
+    """
+    Comprehensive verification suite for Traditional Chinese (Taiwan) UI localization.
+    Covers:
+    1. Translation catalog completeness, schema symmetry, and placeholder preservation
+    2. Runtime dictionary loading, aliasing (zh_TW and zh-TW), and safe English fallbacks
+    3. Bidirectional language switching cycles across English, Simplified Chinese, and Traditional Chinese
+    4. Configuration persistence and restoration across restarts without altering other preferences
+    5. Taiwan Traditional Chinese terminology compliance (光碟, 光碟機, 擷取, 影片, 音訊, 檔案, 資料夾, 批次, 執行記錄)
+    6. Settings window language selection buttons (English, 简体中文, 繁體中文)
+    7. Full UI dynamic retranslation and layout preservation
+    8. Theme switching (Light/Dark/System) compatibility with Traditional Chinese
+    9. Ripping pipeline isolation (guaranteeing translations do not affect encoders, arguments, or file extensions)
+    """
+
+    def setUp(self):
+        self.orig_lang = vcd_ripper.i18n.lang
+        self.orig_theme = vcd_ripper.i18n.theme
+        self.orig_scale = vcd_ripper.i18n.scale
+        self.orig_priority = vcd_ripper.i18n.priority
+        self.orig_fps = vcd_ripper.i18n.fps_mode
+
+    def tearDown(self):
+        vcd_ripper.i18n.lang = self.orig_lang
+        vcd_ripper.i18n.theme = self.orig_theme
+        vcd_ripper.i18n.scale = self.orig_scale
+        vcd_ripper.i18n.priority = self.orig_priority
+        vcd_ripper.i18n.fps_mode = self.orig_fps
+
+    def test_01_translation_files_integrity_and_symmetry(self):
+        """Verify en.json, zh-CN.json, and zh-TW.json have identical sections, keys, and placeholders."""
+        en_path = PROJECT_ROOT / "en.json"
+        cn_path = PROJECT_ROOT / "zh-CN.json"
+        tw_path = PROJECT_ROOT / "zh-TW.json"
+
+        self.assertTrue(en_path.exists(), "en.json missing")
+        self.assertTrue(cn_path.exists(), "zh-CN.json missing")
+        self.assertTrue(tw_path.exists(), "zh-TW.json missing")
+
+        with open(en_path, "r", encoding="utf-8") as f:
+            en_data = json.load(f)
+        with open(cn_path, "r", encoding="utf-8") as f:
+            cn_data = json.load(f)
+        with open(tw_path, "r", encoding="utf-8") as f:
+            tw_data = json.load(f)
+
+        # 1. Section symmetry
+        self.assertEqual(set(en_data.keys()), set(cn_data.keys()))
+        self.assertEqual(set(en_data.keys()), set(tw_data.keys()))
+
+        # 2. Key symmetry across all sections
+        for section in en_data:
+            self.assertEqual(
+                set(en_data[section].keys()),
+                set(tw_data[section].keys()),
+                msg=f"Key mismatch in section '{section}' between en and zh-TW"
+            )
+            self.assertEqual(
+                set(cn_data[section].keys()),
+                set(tw_data[section].keys()),
+                msg=f"Key mismatch in section '{section}' between zh-CN and zh-TW"
+            )
+
+        # 3. Placeholder preservation
+        for section in en_data:
+            for k in en_data[section]:
+                en_val = str(en_data[section][k])
+                tw_val = str(tw_data[section][k])
+                en_ph = set(re.findall(r"\{([a-zA-Z0-9_]+)\}", en_val))
+                tw_ph = set(re.findall(r"\{([a-zA-Z0-9_]+)\}", tw_val))
+                self.assertEqual(
+                    en_ph, tw_ph,
+                    msg=f"Placeholder mismatch for '{section}.{k}': {en_ph} != {tw_ph}"
+                )
+
+    def test_02_runtime_translations_dictionary_and_aliases(self):
+        """Verify vcd_ripper.TRANSLATIONS contains zh_TW and aliases."""
+        self.assertIn("en", vcd_ripper.TRANSLATIONS)
+        self.assertIn("zh_CN", vcd_ripper.TRANSLATIONS)
+        self.assertIn("zh_TW", vcd_ripper.TRANSLATIONS)
+        self.assertIn("zh-TW", vcd_ripper.TRANSLATIONS)
+        self.assertIn("zh-CN", vcd_ripper.TRANSLATIONS)
+
+        # Confirm zh_TW is populated with at least 200 keys
+        total_keys = sum(len(v) for v in vcd_ripper.TRANSLATIONS["zh_TW"].values())
+        self.assertGreaterEqual(total_keys, 220)
+
+    def test_03_bidirectional_language_switching_cycle(self):
+        """Verify all language switching paths return correct localized strings."""
+        i18n = vcd_ripper.I18n()
+
+        # 1. English -> Traditional Chinese
+        i18n.switch("en")
+        self.assertEqual(i18n.lang, "en")
+        self.assertEqual(i18n.t("rip.start"), "Start Ripping")
+        self.assertEqual(i18n.t("output.title"), "OUTPUT FOLDER")
+
+        i18n.switch("zh_TW")
+        self.assertEqual(i18n.lang, "zh_TW")
+        self.assertEqual(i18n.t("rip.start"), "開始擷取")
+        self.assertEqual(i18n.t("output.title"), "輸出資料夾")
+
+        # 2. Traditional Chinese -> Simplified Chinese
+        i18n.switch("zh_CN")
+        self.assertEqual(i18n.lang, "zh_CN")
+        self.assertEqual(i18n.t("rip.start"), "开始提取")
+        self.assertEqual(i18n.t("output.title"), "输出")
+
+        # 3. Simplified Chinese -> Traditional Chinese
+        i18n.switch("zh_TW")
+        self.assertEqual(i18n.lang, "zh_TW")
+        self.assertEqual(i18n.t("rip.start"), "開始擷取")
+
+        # 4. Traditional Chinese -> English
+        i18n.switch("en")
+        self.assertEqual(i18n.lang, "en")
+        self.assertEqual(i18n.t("rip.start"), "Start Ripping")
+
+        # 5. Alias switching
+        i18n.switch("zh-TW")
+        self.assertEqual(i18n.lang, "zh_TW")
+        self.assertEqual(i18n.t("rip.start"), "開始擷取")
+
+    def test_04_config_persistence_and_restart(self):
+        """Verify selecting zh_TW persists to config.json and restores on restart without resetting preferences."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_cfg = os.path.join(tmpdir, "config.json")
+            orig_get_cfg = vcd_ripper.I18n.__dict__.get("_get_config_path", vcd_ripper.I18n._get_config_path)
+            try:
+                vcd_ripper.I18n._get_config_path = staticmethod(lambda for_write=False, *a, **k: tmp_cfg)
+
+                # Initialize with custom preferences
+                i18n1 = vcd_ripper.I18n()
+                i18n1.theme = "dark"
+                i18n1.scale = "125%"
+                i18n1.priority = "High"
+                i18n1.fps_mode = "Passthrough"
+                i18n1.dvd_scanner = "direct_ifo"
+
+                # Switch to zh_TW
+                i18n1.switch("zh_TW")
+
+                # Verify file contents
+                with open(tmp_cfg, "r", encoding="utf-8") as f:
+                    saved = json.load(f)
+                self.assertEqual(saved["lang"], "zh_TW")
+                self.assertEqual(saved["theme"], "dark")
+                self.assertEqual(saved["scale"], "125%")
+                self.assertEqual(saved["priority"], "High")
+                self.assertEqual(saved["fps_mode"], "Passthrough")
+                self.assertEqual(saved["dvd_scanner"], "direct_ifo")
+
+                # Simulate restart
+                i18n2 = vcd_ripper.I18n()
+                self.assertEqual(i18n2.lang, "zh_TW")
+                self.assertEqual(i18n2.theme, "dark")
+                self.assertEqual(i18n2.scale, "125%")
+                self.assertEqual(i18n2.priority, "High")
+                self.assertEqual(i18n2.fps_mode, "Passthrough")
+                self.assertEqual(i18n2.dvd_scanner, "direct_ifo")
+            finally:
+                vcd_ripper.I18n._get_config_path = orig_get_cfg
+
+    def test_05_safe_fallback_behavior(self):
+        """Verify missing keys fallback to English and unknown keys return key name."""
+        i18n = vcd_ripper.I18n()
+        i18n.lang = "zh_TW"
+
+        # 1. Nonexistent key returns key name
+        self.assertEqual(i18n.t("unknown.fake_key_12345"), "unknown.fake_key_12345")
+
+        # 2. Injected English-only key falls back to English
+        vcd_ripper.TRANSLATIONS["en"]["mock_sec"] = {"mock_k": "Mock Value in English"}
+        try:
+            self.assertEqual(i18n.t("mock_sec.mock_k"), "Mock Value in English")
+        finally:
+            del vcd_ripper.TRANSLATIONS["en"]["mock_sec"]
+
+    def test_06_taiwanese_terminology_audit(self):
+        """Audit Traditional Chinese dictionary against Taiwanese Windows standards."""
+        tw = vcd_ripper.TRANSLATIONS["zh_TW"]
+
+        # 1. Disc: 光碟 (not 光盘)
+        self.assertIn("光碟", tw["source"]["scan"])
+        self.assertIn("光碟", tw["content"]["empty_title"])
+        self.assertIn("光碟", tw["header"]["eject_disc"])
+        self.assertNotIn("光盘", tw["source"]["scan"])
+        self.assertNotIn("光盘", tw["content"]["empty_title"])
+
+        # 2. Drive: 光碟機 (not 驱动器)
+        self.assertIn("光碟機", tw["drive"]["drive_label"])
+        self.assertIn("光碟機", tw["header"]["drive_no_disc"])
+        self.assertNotIn("驱动器", tw["drive"]["drive_label"])
+
+        # 3. Ripping: 擷取 (not 提取 / 抓取)
+        self.assertIn("擷取", tw["rip"]["start"])
+        self.assertIn("擷取", tw["output"]["auto_open"])
+        self.assertNotIn("提取", tw["rip"]["start"])
+        self.assertNotIn("抓取", tw["rip"]["start"])
+
+        # 4. Video / Audio: 影片 / 音訊 (not 视频 / 音频)
+        self.assertIn("影片", tw["format"]["video_mode"])
+        self.assertIn("影片", tw["content"]["title"])
+        self.assertIn("音訊", tw["format"]["audio_mode"])
+        self.assertIn("音訊", tw["format"]["audio_track_lbl"])
+        self.assertNotIn("视频", tw["format"]["video_mode"])
+        self.assertNotIn("音频", tw["format"]["audio_mode"])
+
+        # 5. File / Folder: 檔案 / 資料夾 (not 文件 / 文件夹)
+        self.assertIn("檔案", tw["rename"]["title"])
+        self.assertIn("檔案", tw["rename"]["inst"])
+        self.assertIn("資料夾", tw["source"]["browse"])
+        self.assertIn("資料夾", tw["output"]["title"])
+        self.assertNotIn("文件", tw["rename"]["inst"])
+        self.assertNotIn("文件夹", tw["source"]["browse"])
+
+        # 6. Batch / Rename: 批次 / 重新命名 (not 批量 / 重命名)
+        self.assertIn("批次重新命名", tw["batch"]["title"])
+        self.assertNotIn("批量", tw["batch"]["title"])
+        self.assertNotIn("重命名", tw["batch"]["title"])
+
+        # 7. Log / Console: 執行記錄 (not 控制台日志)
+        self.assertIn("執行記錄", tw["header"]["console"])
+        self.assertIn("執行記錄", tw["console"]["title"])
+
+        # 8. Settings / License: 設定 / 授權條款 (not 设置 / 许可证)
+        self.assertEqual(tw["about"]["title"], "設定")
+        self.assertEqual(tw["about"]["license"], "MIT 授權條款")
+        self.assertEqual(tw["about"]["app"], "應用程式")
+
+        # 9. Language dropdown options
+        self.assertEqual(tw["language"]["zh_tw"], "繁體中文")
+        self.assertEqual(tw["language"]["zh_cn"], "簡體中文")
+
+    def test_07_gui_dynamic_retranslation_and_elements(self):
+        """Verify VCDRipperApp dynamic retranslation across main window widgets."""
+        app = vcd_ripper.VCDRipperApp()
+        app.withdraw()
+        try:
+            # Switch to zh_TW
+            app.i18n.switch("zh_TW")
+            app._refresh_ui()
+
+            # Header
+            self.assertEqual(app.title(), "Disc Ripper Pro")
+            self.assertEqual(app._console_btn.cget("text"), "📋  執行記錄")
+            self.assertEqual(app._clear_all_btn.cget("text"), "🗑  清空")
+            self.assertEqual(app._clear_all_tip.text, "清空已載入的影片列表與進度")
+            self.assertEqual(app._about_btn.cget("text"), "⚙  設定")
+            self.assertEqual(app._batch_rename_btn.cget("text"), "✏  批次重新命名")
+            self.assertEqual(app._eject_btn.cget("text"), "⏏  退出光碟")
+
+            # Source & Selection
+            self.assertEqual(app._source_section_lbl.cget("text"), "來源")
+            self.assertEqual(app._browse_btn._lbl.cget("text"), "📁  瀏覽資料夾")
+            self.assertEqual(app._sel_section_lbl.cget("text"), "選取")
+            if hasattr(app, "_dvd_mode_title_rb"):
+                self.assertEqual(app._dvd_mode_title_rb.cget("text"), "完整標題")
+            if hasattr(app, "_dvd_mode_chaps_rb"):
+                self.assertEqual(app._dvd_mode_chaps_rb.cget("text"), "已選章節")
+
+            # Format Section
+            self.assertEqual(app._format_section_lbl.cget("text"), "輸出格式")
+            self.assertEqual(app._video_mode_rb.cget("text"), "🎬  影片")
+            self.assertEqual(app._audio_mode_rb.cget("text"), "🎵  僅音訊")
+            self.assertEqual(app._both_mode_rb.cget("text"), "🎬+🎵  影片與音訊")
+            self.assertEqual(app._res_title_lbl.cget("text"), "匯出解析度：")
+            self.assertEqual(app._res_orig_rb.cget("text"), "原始畫質")
+            self.assertEqual(app._audio_track_lbl.cget("text"), "DVD 音訊軌道：")
+            self.assertEqual(app._target_title_lbl.cget("text"), "目標標題：")
+
+            # Output Section
+            self.assertEqual(app._output_section_lbl.cget("text"), "輸出資料夾")
+            self.assertEqual(app._choose_folder_btn._lbl.cget("text"), "💾  選擇資料夾")
+            self.assertEqual(app._dvd_title_folder_chk.cget("text"), "依 DVD 標題建立資料夾")
+            self.assertEqual(app._auto_open_chk.cget("text"), "擷取完成後開啟輸出資料夾")
+            self.assertEqual(app._dvd_timeline_chk.cget("text"), "產生章節時間軸檔案 (.txt)")
+
+            # Rip & Content Section
+            self.assertEqual(app._rip_btn._lbl.cget("text"), "⚡  開始擷取")
+            self.assertEqual(app._stop_btn._lbl.cget("text"), "⏹  停止擷取")
+            self.assertEqual(app._content_title.cget("text"), "影片檔案")
+            self.assertEqual(app._video_count_badge.cget("text"), "偵測到 0 個項目")
+            self.assertEqual(app._empty_title_lbl.cget("text"), "未載入光碟")
+
+            # Console Section
+            self.assertEqual(app._console_title_lbl.cget("text"), "  📋  執行記錄")
+            self.assertEqual(app._console_clear_btn.cget("text"), "清除")
+            self.assertIn("執行記錄", app._log_window.title())
+        finally:
+            app.destroy()
+
+    def test_08_settings_dialog_buttons_and_switching(self):
+        """Verify Settings window displays English, 简体中文, 繁體中文 buttons and switches dynamically."""
+        app = vcd_ripper.VCDRipperApp()
+        app.withdraw()
+        try:
+            app._show_about()
+            dlg = app._about_dialog
+            self.assertIsNotNone(dlg)
+
+            # Check that dlg has update callbacks
+            self.assertTrue(callable(getattr(dlg, "update_lang", None)))
+            self.assertTrue(callable(getattr(dlg, "update_theme", None)))
+            self.assertTrue(callable(getattr(dlg, "update_scale", None)))
+
+            # Test switching to zh_TW from dialog
+            app.i18n.switch("zh_TW")
+            dlg.update_lang()
+            self.assertEqual(app.i18n.lang, "zh_TW")
+            self.assertEqual(dlg.title(), "設定")
+
+            # Test switching to en from dialog
+            app.i18n.switch("en")
+            dlg.update_lang()
+            self.assertEqual(app.i18n.lang, "en")
+            self.assertEqual(dlg.title(), "Setting")
+
+            # Test switching to zh_CN from dialog
+            app.i18n.switch("zh_CN")
+            dlg.update_lang()
+            self.assertEqual(app.i18n.lang, "zh_CN")
+            self.assertEqual(dlg.title(), "设置")
+
+            # Close dialog
+            dlg.destroy()
+        finally:
+            app.destroy()
+
+    def test_09_theme_compatibility_with_traditional_chinese(self):
+        """Verify Traditional Chinese styling works seamlessly under Light and Dark themes."""
+        app = vcd_ripper.VCDRipperApp()
+        app.withdraw()
+        try:
+            app.i18n.switch("zh_TW")
+            app._refresh_ui()
+
+            # Light mode
+            app.i18n.switch_theme("light")
+            self.assertEqual(app.i18n.get_effective_theme(), "light")
+            app._refresh_ui()
+            self.assertEqual(app._rip_btn._lbl.cget("text"), "⚡  開始擷取")
+
+            # Dark mode
+            app.i18n.switch_theme("dark")
+            self.assertEqual(app.i18n.get_effective_theme(), "dark")
+            app._refresh_ui()
+            self.assertEqual(app._rip_btn._lbl.cget("text"), "⚡  開始擷取")
+
+            # Language persists across theme switches
+            self.assertEqual(app.i18n.lang, "zh_TW")
+        finally:
+            app.destroy()
+
+    def test_10_ripping_pipeline_unaltered_by_localization(self):
+        """Verify technical encoders, arguments, and extensions remain untranslated and functional."""
+        # Check OUTPUT_FORMATS
+        self.assertIn("DAT", vcd_ripper.OUTPUT_FORMATS)
+        self.assertIn("MP4", vcd_ripper.OUTPUT_FORMATS)
+        self.assertIn("MPG", vcd_ripper.OUTPUT_FORMATS)
+        self.assertIn("MOV", vcd_ripper.OUTPUT_FORMATS)
+        self.assertEqual(vcd_ripper.OUTPUT_FORMATS["MP4"]["ext"], ".mp4")
+        self.assertIn("-c:v", vcd_ripper.OUTPUT_FORMATS["MP4"]["args"])
+        self.assertIn("libx264", vcd_ripper.OUTPUT_FORMATS["MP4"]["args"])
+
+        # Check AUDIO_FORMATS
+        self.assertIn("WAV", vcd_ripper.AUDIO_FORMATS)
+        self.assertIn("MP3", vcd_ripper.AUDIO_FORMATS)
+        self.assertEqual(vcd_ripper.AUDIO_FORMATS["WAV"]["ext"], ".wav")
+        self.assertEqual(vcd_ripper.AUDIO_FORMATS["MP3"]["ext"], ".mp3")
+
+
+class TestSettingsWindowRefinement(unittest.TestCase):
+    """Test cases for Settings window layout refinement and system diagnostics enhancement."""
+
+    def setUp(self):
+        self._orig_lang = vcd_ripper.i18n.lang
+        self._orig_theme = vcd_ripper.i18n.theme
+        self._orig_scale = vcd_ripper.i18n.scale
+        self._orig_priority = vcd_ripper.i18n.priority
+        self._orig_fps = vcd_ripper.i18n.fps_mode
+
+    def tearDown(self):
+        vcd_ripper.i18n.lang = self._orig_lang
+        vcd_ripper.i18n.theme = self._orig_theme
+        vcd_ripper.i18n.scale = self._orig_scale
+        vcd_ripper.i18n.priority = self._orig_priority
+        vcd_ripper.i18n.fps_mode = self._orig_fps
+        vcd_ripper.apply_font_scale(None, 1.0)
+        vcd_ripper.apply_theme_palette(self._orig_theme)
+
+    def test_settings_window_three_categories_structure_and_translation(self):
+        """Verify the 3 distinct categories exist and update correctly across en, zh_CN, and zh_TW."""
+        app = vcd_ripper.VCDRipperApp()
+        app.withdraw()
+        try:
+            app._show_about()
+            dlg = app._about_dialog
+            self.assertIsNotNone(dlg)
+
+            def get_category_headers():
+                headers = []
+                for child in dlg.winfo_children():
+                    if isinstance(child, tk.Frame):
+                        for sub in child.winfo_children():
+                            if isinstance(sub, tk.Label):
+                                txt = sub.cget("text")
+                                if any(icon in txt for icon in ("🎨", "⚙️", "🛠️")):
+                                    headers.append(txt)
+                return headers
+
+            # Check zh_TW (default or current)
+            app.i18n.switch("zh_TW")
+            dlg.update_lang()
+            tw_headers = get_category_headers()
+            self.assertEqual(len(tw_headers), 3)
+            self.assertIn("🎨  外觀與顯示", tw_headers)
+            self.assertIn("⚙️  處理設定", tw_headers)
+            self.assertIn("🛠️  診斷與系統資訊", tw_headers)
+
+            # Check zh_CN
+            app.i18n.switch("zh_CN")
+            dlg.update_lang()
+            cn_headers = get_category_headers()
+            self.assertEqual(len(cn_headers), 3)
+            self.assertIn("🎨  外观与显示", cn_headers)
+            self.assertIn("⚙️  处理设置", cn_headers)
+            self.assertIn("🛠️  诊断与系统信息", cn_headers)
+
+            # Check en
+            app.i18n.switch("en")
+            dlg.update_lang()
+            en_headers = get_category_headers()
+            self.assertEqual(len(en_headers), 3)
+            self.assertIn("🎨  Appearance & Display", en_headers)
+            self.assertIn("⚙️  Processing Settings", en_headers)
+            self.assertIn("🛠️  Diagnostics & System Information", en_headers)
+
+            dlg.destroy()
+        finally:
+            app.destroy()
+
+    def test_settings_window_handbrake_and_ffmpeg_diagnostics(self):
+        """Verify FFmpeg and HandBrakeCLI status and path rows are displayed properly."""
+        app = vcd_ripper.VCDRipperApp()
+        app.withdraw()
+        try:
+            app.i18n.switch("en")
+            app._show_about()
+            dlg = app._about_dialog
+            self.assertIsNotNone(dlg)
+
+            def get_all_widgets_of_type(root, wtype):
+                res = []
+                if isinstance(root, wtype):
+                    res.append(root)
+                for c in root.winfo_children():
+                    res.extend(get_all_widgets_of_type(c, wtype))
+                return res
+
+            labels = get_all_widgets_of_type(dlg, tk.Label)
+            label_texts = [lbl.cget("text") for lbl in labels]
+
+            # Check FFmpeg and HandBrakeCLI dependency titles
+            self.assertTrue(any("FFmpeg" in t for t in label_texts))
+            self.assertTrue(any("HandBrake" in t for t in label_texts))
+
+            # Check that Ready indicator is shown when binaries are present
+            if app._ffmpeg and os.path.isfile(app._ffmpeg):
+                self.assertTrue(any("Ready" in t for t in label_texts))
+            if app._handbrake and os.path.isfile(app._handbrake):
+                self.assertTrue(any("Ready" in t for t in label_texts))
+
+            # Check that executable path is displayed
+            if app._ffmpeg:
+                self.assertTrue(any("ffmpeg.exe" in t for t in label_texts))
+            if app._handbrake:
+                self.assertTrue(any("HandBrakeCLI.exe" in t for t in label_texts))
+
+            dlg.destroy()
+        finally:
+            app.destroy()
+
+    def test_settings_window_copy_path_buttons_and_clipboard(self):
+        """Verify copy icon buttons for FFmpeg and HandBrakeCLI paths copy to clipboard and give feedback."""
+        app = vcd_ripper.VCDRipperApp()
+        app.withdraw()
+        try:
+            app.i18n.switch("en")
+            app._show_about()
+            dlg = app._about_dialog
+            self.assertIsNotNone(dlg)
+
+            def get_all_buttons(root):
+                res = []
+                if isinstance(root, tk.Button):
+                    res.append(root)
+                for c in root.winfo_children():
+                    res.extend(get_all_buttons(c))
+                return res
+
+            buttons = get_all_buttons(dlg)
+            copy_btns = [b for b in buttons if b.cget("text") in ("📋", "✓")]
+            self.assertEqual(len(copy_btns), 2, "Expected 2 Copy icon buttons (FFmpeg and HandBrakeCLI)")
+
+            # Test FFmpeg Copy
+            if app._ffmpeg:
+                copy_btns[0].invoke()
+                copied_ffmpeg = dlg.clipboard_get()
+                self.assertEqual(copied_ffmpeg, app._ffmpeg)
+                self.assertEqual(copy_btns[0].cget("text"), "✓")
+
+            # Test HandBrake Copy
+            if app._handbrake:
+                copy_btns[1].invoke()
+                copied_hb = dlg.clipboard_get()
+                self.assertEqual(copied_hb, app._handbrake)
+                self.assertEqual(copy_btns[1].cget("text"), "✓")
+
+            dlg.destroy()
+        finally:
+            app.destroy()
+
+    def test_settings_window_missing_binaries_graceful_handling(self):
+        """Verify that when binaries are missing, status indicates Not Found and Copy button is disabled."""
+        app = vcd_ripper.VCDRipperApp()
+        app.withdraw()
+        try:
+            app._ffmpeg = None
+            app._handbrake = None
+            app.i18n.switch("en")
+            app._show_about()
+            dlg = app._about_dialog
+            self.assertIsNotNone(dlg)
+
+            def get_all_buttons(root):
+                res = []
+                if isinstance(root, tk.Button):
+                    res.append(root)
+                for c in root.winfo_children():
+                    res.extend(get_all_buttons(c))
+                return res
+
+            buttons = get_all_buttons(dlg)
+            copy_btns = [b for b in buttons if b.cget("text") in ("📋", "✓")]
+            self.assertEqual(len(copy_btns), 2)
+            for b in copy_btns:
+                self.assertEqual(b.cget("state"), "disabled")
+
+            dlg.destroy()
+        finally:
+            app.destroy()
+
+    def test_settings_window_theme_switching_contrast(self):
+        """Verify all labels and buttons in the refined Settings dialog maintain contrast across themes."""
+        app = vcd_ripper.VCDRipperApp()
+        app.withdraw()
+        try:
+            app._show_about()
+            dlg = app._about_dialog
+            self.assertIsNotNone(dlg)
+
+            def get_all_labels(w):
+                res = []
+                if isinstance(w, tk.Label):
+                    res.append(w)
+                for c in w.winfo_children():
+                    res.extend(get_all_labels(c))
+                return res
+
+            def get_all_buttons(w):
+                res = []
+                if isinstance(w, tk.Button):
+                    res.append(w)
+                for c in w.winfo_children():
+                    res.extend(get_all_buttons(c))
+                return res
+
+            # Test Light theme
+            vcd_ripper.i18n.switch_theme("light")
+            dlg.update_theme()
+            for lbl in get_all_labels(dlg):
+                fg = lbl.cget("fg").upper()
+                self.assertNotIn(fg, ["#F0F2FF", "#4A5270"], f"Label '{lbl.cget('text')}' has low contrast in light mode")
+
+            # Test Dark theme
+            vcd_ripper.i18n.switch_theme("dark")
+            dlg.update_theme()
+            for lbl in get_all_labels(dlg):
+                fg = lbl.cget("fg").upper()
+                self.assertNotIn(fg, ["#000000", "#0F172A", "#4A5270", "BLACK"], f"Label '{lbl.cget('text')}' has dark/low contrast in dark mode")
+
+            for btn in get_all_buttons(dlg):
+                fg = btn.cget("fg").upper()
+                afg = btn.cget("activeforeground").upper()
+                self.assertNotIn(fg, ["#000000", "#0F172A", "#4A5270", "BLACK"], f"Button '{btn.cget('text')}' has dark/low contrast fg in dark mode")
+                self.assertNotIn(afg, ["#000000", "#0F172A", "#4A5270", "BLACK"], f"Button '{btn.cget('text')}' has dark/low contrast afg in dark mode")
+
+            dlg.destroy()
+        finally:
+            app.destroy()
+
+    def test_diagnostic_action_redesign_presentation_and_busy_state(self):
+        """Verify Diagnostic Scan is redesigned as Disc Health Check with helper text and busy state."""
+        app = vcd_ripper.VCDRipperApp()
+        app.withdraw()
+        try:
+            # 1. Verify in English
+            app.i18n.switch("en")
+            app._show_about()
+            dlg = app._about_dialog
+            self.assertIsNotNone(dlg)
+
+            def get_all_widgets_of_type(root, wtype):
+                res = []
+                if isinstance(root, wtype):
+                    res.append(root)
+                for c in root.winfo_children():
+                    res.extend(get_all_widgets_of_type(c, wtype))
+                return res
+
+            buttons = get_all_widgets_of_type(dlg, tk.Button)
+            labels = get_all_widgets_of_type(dlg, tk.Label)
+
+            # Disc Health Check action button
+            health_btn = next((b for b in buttons if "Health Check" in b.cget("text") or "Analyze Disc" in b.cget("text") or "Diagnostic Scan" in b.cget("text")), None)
+            self.assertIsNotNone(health_btn, "Expected Disc Health Check action button")
+            self.assertIn("Health Check", health_btn.cget("text"))
+
+            # Helper text
+            helper_lbl = next((l for l in labels if "readability" in l.cget("text").lower() or "Scan the disc" in l.cget("text")), None)
+            self.assertIsNotNone(helper_lbl, "Expected helper explanatory text under action button")
+            self.assertIn("readability", helper_lbl.cget("text").lower())
+
+            # Export Diagnostic Report (.txt) secondary button
+            export_btn = next((b for b in buttons if "Report" in b.cget("text") or "Export Logs" in b.cget("text")), None)
+            self.assertIsNotNone(export_btn, "Expected Export Diagnostic Report button")
+            self.assertIn("Report", export_btn.cget("text"))
+
+            # 2. Verify in Traditional Chinese (Taiwan)
+            app.i18n.switch("zh_TW")
+            dlg.update_lang()
+            self.assertIn("光碟健康檢查", health_btn.cget("text"))
+            self.assertIn("可讀性", helper_lbl.cget("text"))
+            self.assertIn("匯出診斷報告", export_btn.cget("text"))
+
+            # 3. Verify in Simplified Chinese
+            app.i18n.switch("zh_CN")
+            dlg.update_lang()
+            self.assertIn("光碟健康检查", health_btn.cget("text"))
+            self.assertIn("可读性", helper_lbl.cget("text"))
+            self.assertIn("导出诊断报告", export_btn.cget("text"))
+
+            # 4. Verify busy state behavior
+            app.i18n.switch("en")
+            dlg.update_lang()
+            with patch.object(app, "_open_health_check"):
+                app._health_checking = True
+                dlg.update_lang()
+                self.assertIn("Running", health_btn.cget("text"))
+                self.assertEqual(health_btn.cget("state"), "disabled")
+
+                # Simulate health check finished
+                app._health_checking = False
+                dlg.update_lang()
+                self.assertIn("Health Check", health_btn.cget("text"))
+                self.assertEqual(health_btn.cget("state"), "normal")
+
+            dlg.destroy()
+        finally:
+            app.destroy()
+
+    def test_settings_window_resizable_and_minsize(self):
+        """Verify Settings window is resizable and enforces reasonable minsize."""
+        app = vcd_ripper.VCDRipperApp()
+        app.withdraw()
+        try:
+            app._show_about()
+            dlg = app._about_dialog
+            self.assertIsNotNone(dlg)
+
+            res = dlg.resizable()
+            self.assertTrue(res[0] and res[1], f"Expected dialog to be resizable, got {res}")
+
+            min_w, min_h = dlg.minsize()
+            self.assertGreaterEqual(min_w, 500, f"Expected min_w >= 500, got {min_w}")
+            self.assertGreaterEqual(min_h, 550, f"Expected min_h >= 550, got {min_h}")
+
+            dlg.destroy()
+        finally:
+            app.destroy()
+
+    def test_settings_window_resize_grid_stability(self):
+        """Verify segmented control grid columns maintain uniform proportions when window is resized."""
+        app = vcd_ripper.VCDRipperApp()
+        app.withdraw()
+        try:
+            app.i18n.switch("en")
+            app._show_about()
+            dlg = app._about_dialog
+            self.assertIsNotNone(dlg)
+
+            # Enlarge dialog
+            dlg.geometry("820x900")
+            dlg.update()
+
+            # Find FPS Mode and Priority buttons
+            def find_widget_by_text(root, text):
+                for c in root.winfo_children():
+                    if isinstance(c, tk.Button) and text in c.cget("text"):
+                        return c
+                    found = find_widget_by_text(c, text)
+                    if found:
+                        return found
+                return None
+
+            pass_btn = find_widget_by_text(dlg, "Passthrough")
+            cfr_btn = find_widget_by_text(dlg, "CFR")
+            low_btn = find_widget_by_text(dlg, "Low")
+            med_btn = find_widget_by_text(dlg, "Medium")
+            high_btn = find_widget_by_text(dlg, "High")
+
+            self.assertIsNotNone(pass_btn)
+            self.assertIsNotNone(cfr_btn)
+            self.assertIsNotNone(low_btn)
+            self.assertIsNotNone(med_btn)
+            self.assertIsNotNone(high_btn)
+
+            # Verify segments within FPS Mode are equal
+            self.assertAlmostEqual(pass_btn.winfo_width(), cfr_btn.winfo_width(), delta=10)
+            # Verify segments within Priority are equal
+            self.assertAlmostEqual(low_btn.winfo_width(), med_btn.winfo_width(), delta=10)
+            self.assertAlmostEqual(med_btn.winfo_width(), high_btn.winfo_width(), delta=10)
+
+            # Verify that the right edge of fps_btn_frame aligns with the right edge of priority_btn_frame
+            fps_frame = pass_btn.master
+            prio_frame = low_btn.master
+            fps_right = fps_frame.winfo_x() + fps_frame.winfo_width()
+            prio_right = prio_frame.winfo_x() + prio_frame.winfo_width()
+            self.assertAlmostEqual(fps_right, prio_right, delta=4)
+
+            # Reduce to minsize
+            min_w, min_h = dlg.minsize()
+            dlg.geometry(f"{min_w}x{min_h}")
+            dlg.update()
+
+            self.assertAlmostEqual(pass_btn.winfo_width(), cfr_btn.winfo_width(), delta=10)
+            self.assertAlmostEqual(low_btn.winfo_width(), med_btn.winfo_width(), delta=10)
+            fps_right = fps_frame.winfo_x() + fps_frame.winfo_width()
+            prio_right = prio_frame.winfo_x() + prio_frame.winfo_width()
+            self.assertAlmostEqual(fps_right, prio_right, delta=4)
+
+            dlg.destroy()
+        finally:
+            app.destroy()
+
+    def test_tri_language_column_alignment_stability(self):
+        """Verify control column start offset remains stable across en, zh_CN, and zh_TW."""
+        app = vcd_ripper.VCDRipperApp()
+        app.withdraw()
+        try:
+            app._show_about()
+            dlg = app._about_dialog
+            self.assertIsNotNone(dlg)
+
+            def get_fps_frame_x():
+                for child in dlg.winfo_children():
+                    if isinstance(child, tk.Frame):
+                        for sub in child.winfo_children():
+                            if isinstance(sub, tk.Frame):
+                                for widget in sub.winfo_children():
+                                    if isinstance(widget, tk.Frame):
+                                        for btn in widget.winfo_children():
+                                            if isinstance(btn, tk.Button) and btn.cget("text") in ("Passthrough", "自動直通", "自动直通"):
+                                                return widget.winfo_x()
+                return -1
+
+            dlg.update()
+            app.i18n.switch("en")
+            dlg.update_lang()
+            dlg.update()
+            en_x = get_fps_frame_x()
+
+            app.i18n.switch("zh_TW")
+            dlg.update_lang()
+            dlg.update()
+            tw_x = get_fps_frame_x()
+
+            app.i18n.switch("zh_CN")
+            dlg.update_lang()
+            dlg.update()
+            cn_x = get_fps_frame_x()
+
+            self.assertGreater(en_x, 0)
+            self.assertEqual(en_x, tw_x, f"Control column offset drifted between en ({en_x}) and zh_TW ({tw_x})")
+            self.assertEqual(en_x, cn_x, f"Control column offset drifted between en ({en_x}) and zh_CN ({cn_x})")
+
+            dlg.destroy()
+        finally:
+            app.destroy()
+
+    def test_diagnostic_scan_action_neutral_styling(self):
+        """Verify Disc Health Check uses neutral secondary action styling and does not resemble selected settings."""
+        app = vcd_ripper.VCDRipperApp()
+        app.withdraw()
+        try:
+            app.i18n.switch("en")
+            app._show_about()
+            dlg = app._about_dialog
+            self.assertIsNotNone(dlg)
+
+            def get_all_buttons(root):
+                res = []
+                if isinstance(root, tk.Button):
+                    res.append(root)
+                for c in root.winfo_children():
+                    res.extend(get_all_buttons(c))
+                return res
+
+            buttons = get_all_buttons(dlg)
+            health_btn = next((b for b in buttons if "Health Check" in b.cget("text") or "Analyze Disc" in b.cget("text") or "Diagnostic Scan" in b.cget("text")), None)
+            export_btn = next((b for b in buttons if "Report" in b.cget("text") or "Export Logs" in b.cget("text")), None)
+            self.assertIsNotNone(health_btn)
+            self.assertIsNotNone(export_btn)
+
+            # 1. Dark Mode verification
+            vcd_ripper.i18n.switch_theme("dark")
+            dlg.update_theme()
+
+            # Neutral action styling: MUST NOT be solid purple accent
+            self.assertNotEqual(health_btn.cget("bg"), vcd_ripper.COLORS["accent"], "Disc Health Check must not use solid purple accent")
+            self.assertEqual(health_btn.cget("bg"), vcd_ripper.COLORS["bg_panel"])
+            self.assertEqual(health_btn.cget("fg"), vcd_ripper.COLORS["text_primary"])
+            self.assertEqual(health_btn.cget("highlightthickness"), 1)
+            self.assertEqual(health_btn.cget("highlightbackground"), vcd_ripper.COLORS["border"])
+
+            # Export Report action styling: neutral with success green accent
+            self.assertEqual(export_btn.cget("bg"), vcd_ripper.COLORS["bg_panel"])
+            self.assertEqual(export_btn.cget("fg"), vcd_ripper.COLORS["success"])
+
+            # 2. Light Mode verification
+            vcd_ripper.i18n.switch_theme("light")
+            dlg.update_theme()
+            self.assertNotEqual(health_btn.cget("bg"), vcd_ripper.COLORS["accent"], "Disc Health Check must not be purple in light theme")
+            self.assertEqual(health_btn.cget("bg"), vcd_ripper.COLORS["bg_panel"])
+            self.assertEqual(health_btn.cget("fg"), vcd_ripper.COLORS["text_primary"])
+
+            # 3. Running state verification
+            with patch.object(app, "_open_health_check"):
+                app._health_checking = True
+                dlg.update_theme()
+                self.assertEqual(health_btn.cget("state"), "disabled")
+
+            dlg.destroy()
+        finally:
+            app.destroy()
+
+    def test_settings_window_all_categories_column_alignment_and_resize(self):
+        """Verify controls in Appearance, Processing, and Diagnostics start at the exact same horizontal coordinate."""
+        app = vcd_ripper.VCDRipperApp()
+        app.withdraw()
+        try:
+            app._show_about()
+            dlg = app._about_dialog
+            self.assertIsNotNone(dlg)
+            dlg.update()
+
+            def get_category_control_start_xs():
+                cards = []
+                for c in dlg.winfo_children():
+                    if isinstance(c, tk.Frame) and any(isinstance(sub, tk.Label) and any(icon in sub.cget("text") for icon in ("🎨", "⚙️", "🛠️")) for sub in c.winfo_children()):
+                        cards.append(c)
+                
+                start_xs = []
+                for card in cards:
+                    for row in card.winfo_children():
+                        if isinstance(row, tk.Frame):
+                            # Control frame is the second child or child in column 1
+                            frames = [w for w in row.winfo_children() if isinstance(w, tk.Frame)]
+                            if frames:
+                                start_xs.append(frames[0].winfo_x())
+                return start_xs
+
+            xs = get_category_control_start_xs()
+            self.assertGreater(len(xs), 4)
+            # All control columns must start at the exact same x position
+            first_x = xs[0]
+            for idx, x_pos in enumerate(xs):
+                self.assertEqual(x_pos, first_x, f"Control frame at index {idx} started at x={x_pos}, expected {first_x}")
+
+            # Resize to wider dialog
+            dlg.geometry("820x860")
+            dlg.update()
+            resized_xs = get_category_control_start_xs()
+            first_resized_x = resized_xs[0]
+            for idx, x_pos in enumerate(resized_xs):
+                self.assertEqual(x_pos, first_resized_x, f"Resized control frame at index {idx} started at x={x_pos}, expected {first_resized_x}")
+
+            # Test scale update
+            vcd_ripper.i18n.switch_scale("125%")
+            dlg.update_scale()
+            dlg.update()
+            scaled_xs = get_category_control_start_xs()
+            first_scaled_x = scaled_xs[0]
+            for idx, x_pos in enumerate(scaled_xs):
+                self.assertEqual(x_pos, first_scaled_x, f"Scaled control frame at index {idx} started at x={x_pos}, expected {first_scaled_x}")
+
+            dlg.destroy()
+        finally:
+            app.destroy()
+
+
+    def test_dvd_scanner_tooltips_dynamic_localization(self):
+        """Verify that DVD scanner options' hover tooltips update dynamically when language is switched."""
+        app = vcd_ripper.VCDRipperApp()
+        app.withdraw()
+        try:
+            app.i18n.switch("en")
+            app._show_about()
+            dlg = app._about_dialog
+            self.assertIsNotNone(dlg)
+            self.assertTrue(hasattr(dlg, "scanner_tips"))
+
+            # Switch to zh_TW
+            app.i18n.switch("zh_TW")
+            dlg.update_lang()
+            self.assertEqual(dlg.scanner_tips["auto"].text, "自動模式：優先使用 HandBrake 掃描，必要時自動切換至 Direct IFO")
+
+            # Switch to zh_CN
+            app.i18n.switch("zh_CN")
+            dlg.update_lang()
+            self.assertEqual(dlg.scanner_tips["auto"].text, "自动模式：优先使用 HandBrake 扫描，必要时平滑回退至 Direct IFO")
+
+            # Switch back to en
+            app.i18n.switch("en")
+            dlg.update_lang()
+            self.assertEqual(dlg.scanner_tips["auto"].text, "Auto: HandBrake scan with Direct IFO fallback")
+            dlg.destroy()
+        finally:
+            app.destroy()
+
+    def test_settings_window_scale_switching_close_button_visibility(self):
+        """Verify that Close button remains completely visible with positive bottom margin across all scales and languages."""
+        app = vcd_ripper.VCDRipperApp()
+        app.withdraw()
+        try:
+            for lang in ["en", "zh_TW", "zh_CN"]:
+                app.i18n.switch(lang)
+                for scale in ["100%", "125%", "150%"]:
+                    vcd_ripper.i18n.switch_scale(scale)
+                    app._show_about()
+                    dlg = app._about_dialog
+                    self.assertIsNotNone(dlg)
+                    dlg.update_idletasks()
+
+                    close_btn = None
+                    for child in dlg.winfo_children():
+                        if isinstance(child, tk.Frame):
+                            for sub in child.winfo_children():
+                                if isinstance(sub, tk.Button) and any(kw in sub.cget("text") for kw in ("Close", "關閉", "关闭")):
+                                    close_btn = sub
+                                    break
+
+                    self.assertIsNotNone(close_btn, f"Close button not found for lang={lang}, scale={scale}")
+                    btn_y = close_btn.winfo_rooty() - dlg.winfo_rooty()
+                    btn_h = close_btn.winfo_height()
+                    dlg_h = dlg.winfo_height()
+                    self.assertGreater(btn_h, 20, f"Close button compressed: height={btn_h} for scale={scale}")
+                    self.assertLessEqual(btn_y + btn_h, dlg_h, f"Close button clipped: bottom={btn_y + btn_h} exceeds dlg_h={dlg_h}")
+                    margin_bottom = dlg_h - (btn_y + btn_h)
+                    self.assertGreaterEqual(margin_bottom, 8, f"Insufficient margin below close button: {margin_bottom}px for scale={scale}")
+                    dlg.destroy()
+        finally:
+            app.destroy()
+
+    def test_settings_window_scale_switching_geometry_consistency(self):
+        """Verify that switching scale back and forth maintains exact consistent window geometry and prevents layout shifts."""
+        app = vcd_ripper.VCDRipperApp()
+        app.withdraw()
+        try:
+            app.i18n.switch("en")
+            vcd_ripper.i18n.switch_scale("100%")
+            app._show_about()
+            dlg = app._about_dialog
+            self.assertIsNotNone(dlg)
+            dlg.update_idletasks()
+
+            init_w = dlg.winfo_width()
+            init_h = dlg.winfo_height()
+            self.assertEqual((init_w, init_h), (640, 850))
+
+            # Switch to 125%
+            vcd_ripper.i18n.switch_scale("125%")
+            dlg.update_scale()
+            dlg.update_idletasks()
+            self.assertEqual((dlg.winfo_width(), dlg.winfo_height()), (800, 1073))
+
+            # Switch to 150%
+            vcd_ripper.i18n.switch_scale("150%")
+            dlg.update_scale()
+            dlg.update_idletasks()
+            self.assertEqual((dlg.winfo_width(), dlg.winfo_height()), (960, 1275))
+
+            # Switch back to 100%
+            vcd_ripper.i18n.switch_scale("100%")
+            dlg.update_scale()
+            dlg.update_idletasks()
+            self.assertEqual((dlg.winfo_width(), dlg.winfo_height()), (init_w, init_h))
+
+            dlg.destroy()
+        finally:
+            app.destroy()
+
+
+class TestDiscHealthCheckAndDiagnosticReport(unittest.TestCase):
+    """Unit and integration tests for Disc Health Check and Human-Readable Diagnostic Reports."""
+
+    def setUp(self):
+        self.tmp_dir = tempfile.mkdtemp(prefix="disc_health_test_")
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp_dir, ignore_errors=True)
+
+    def test_privacy_masking(self):
+        """Verify Windows user path masking replaces usernames with <user>."""
+        p1 = r"C:\Users\JohnDoe\Videos\MyDVD\VIDEO_TS"
+        masked1 = dvd_diagnostics.mask_private_path(p1)
+        self.assertEqual(masked1, r"C:\Users\<user>\Videos\MyDVD\VIDEO_TS")
+
+        p2 = r"D:\VIDEO_TS\VTS_01_1.VOB"
+        masked2 = dvd_diagnostics.mask_private_path(p2)
+        self.assertEqual(masked2, p2)
+
+        self.assertEqual(dvd_diagnostics.mask_private_path(""), "")
+        self.assertIsNone(dvd_diagnostics.mask_private_path(None))
+
+    def test_disc_health_check_quick_and_thorough_mock_dvd(self):
+        """Verify quick and thorough health checks on mock DVD structure."""
+        video_ts = os.path.join(self.tmp_dir, "VIDEO_TS")
+        os.makedirs(video_ts)
+        with open(os.path.join(video_ts, "VIDEO_TS.IFO"), "wb") as f:
+            f.write(b"DVDVIDEO-VMG" + b"\x00" * 200)
+        vts_ifo = os.path.join(video_ts, "VTS_01_0.IFO")
+        with open(vts_ifo, "wb") as f:
+            f.write(b"DVDVIDEO-VTS" + b"\x00" * 200)
+
+        vts_vob = os.path.join(video_ts, "VTS_01_1.VOB")
+        dummy_data = b"MPEG" + b"\x00" * (128 * 1024)
+        with open(vts_vob, "wb") as f:
+            f.write(dummy_data)
+
+        # Quick check
+        rep_q = dvd_diagnostics.run_disc_health_check(self.tmp_dir, mode="quick")
+        self.assertIn(rep_q.overall_status, (dvd_diagnostics.HealthStatus.GOOD, dvd_diagnostics.HealthStatus.WARNINGS))
+        self.assertIn("DVD", rep_q.media_type)
+        self.assertGreater(len(rep_q.checks), 3)
+
+        # Thorough check (performs multi-point read tests)
+        progress_events = []
+        rep_t = dvd_diagnostics.run_disc_health_check(
+            self.tmp_dir, mode="thorough",
+            progress_callback=lambda pct, msg: progress_events.append((pct, msg))
+        )
+        self.assertIn(rep_t.overall_status, (dvd_diagnostics.HealthStatus.GOOD, dvd_diagnostics.HealthStatus.WARNINGS))
+        self.assertEqual(rep_t.mode, "thorough")
+        self.assertGreater(len(progress_events), 0)
+
+        # Ensure non-destructive: no video conversion output files created
+        files_after = os.listdir(video_ts)
+        self.assertNotIn("output.mp4", files_after)
+        self.assertNotIn("output.mkv", files_after)
+
+    def test_no_false_physical_damage_claims_on_empty_source(self):
+        """Verify engine never claims optical disc damage or scratches on empty/invalid paths."""
+        rep = dvd_diagnostics.run_disc_health_check("", mode="quick")
+        self.assertEqual(rep.overall_status, dvd_diagnostics.HealthStatus.INCONCLUSIVE)
+        self.assertNotIn("scratch", rep.summary.lower())
+        self.assertNotIn("bad sector", rep.summary.lower())
+        self.assertNotIn("physical damage", rep.summary.lower())
+
+    def test_health_check_cancellation(self):
+        """Verify health check aborts gracefully when cancel_check triggers."""
+        video_ts = os.path.join(self.tmp_dir, "VIDEO_TS")
+        os.makedirs(video_ts)
+        vts_vob = os.path.join(video_ts, "VTS_01_1.VOB")
+        with open(vts_vob, "wb") as f:
+            f.write(b"MPEG" + b"\x00" * (64 * 1024))
+
+        rep = dvd_diagnostics.run_disc_health_check(
+            self.tmp_dir, mode="thorough",
+            cancel_check=lambda: True
+        )
+        self.assertEqual(rep.overall_status, dvd_diagnostics.HealthStatus.INCONCLUSIVE)
+        self.assertIn("cancelled", rep.summary.lower())
+
+    def test_diagnostic_report_text_generation_and_export(self):
+        """Verify text report generation in all languages and file export."""
+        rep = dvd_diagnostics.DiscHealthReport(
+            overall_status=dvd_diagnostics.HealthStatus.GOOD,
+            summary="All basic readability and structural checks passed.",
+            source_path=r"C:\Users\TestUser\DiscRip",
+            media_type="DVD",
+            mode="quick",
+            duration_sec=2.15,
+            checks=[
+                dvd_diagnostics.CheckItem("Disc Access", dvd_diagnostics.CheckStatus.PASSED, "Drive ready", 0.1),
+                dvd_diagnostics.CheckItem("Media Structure", dvd_diagnostics.CheckStatus.PASSED, "Valid VIDEO_TS", 0.2),
+            ],
+            findings=[],
+            recommended_next_steps=["Disc is healthy. Ready to rip."]
+        )
+
+        for lang in ("en", "zh_TW", "zh_CN"):
+            txt = dvd_diagnostics.generate_diagnostic_report_text(rep, mask_privacy=True, lang=lang)
+            self.assertIn("DISC RIPPER PRO", txt)
+            self.assertIn("C:\\Users\\<user>\\DiscRip", txt)
+            self.assertNotIn("TestUser", txt)
+
+        # Export to file
+        out_txt = os.path.join(self.tmp_dir, "test_report.txt")
+        ok = dvd_diagnostics.export_diagnostic_report_txt(rep, out_txt, mask_privacy=True, lang="zh_TW")
+        self.assertTrue(ok)
+        self.assertTrue(os.path.isfile(out_txt))
+        with open(out_txt, "r", encoding="utf-8") as f:
+            content = f.read()
+        self.assertIn("光碟健康診斷報告", content)
+        self.assertIn("執行檢查項目", content)
+
+    def test_proceed_to_rip_flow_safety(self):
+        """Verify Proceed to Ripping never auto-starts ripping and focuses main window."""
+        app = vcd_ripper.VCDRipperApp()
+        app.withdraw()
+        try:
+            rep_good = dvd_diagnostics.DiscHealthReport(
+                overall_status=dvd_diagnostics.HealthStatus.GOOD,
+                summary="Ready",
+                source_path=self.tmp_dir,
+                media_type="DVD",
+                mode="quick",
+                duration_sec=1.0,
+                checks=[],
+                findings=[],
+                recommended_next_steps=[]
+            )
+
+            # Invoking proceed to rip flow with GOOD status
+            app._on_health_proceed_rip(rep_good)
+            self.assertFalse(app._ripping, "Proceed to Ripping MUST NOT auto-start ripping!")
+            self.assertEqual(app._vcd_path.get(), self.tmp_dir)
+
+            # Invoking proceed to rip flow with PROBLEMS status when user cancels
+            rep_prob = dvd_diagnostics.DiscHealthReport(
+                overall_status=dvd_diagnostics.HealthStatus.PROBLEMS,
+                summary="Severe unreadable sectors detected",
+                source_path=self.tmp_dir,
+                media_type="DVD",
+                mode="thorough",
+                duration_sec=3.0,
+                checks=[],
+                findings=[dvd_diagnostics.DiagnosticFinding(dvd_diagnostics.FindingSeverity.ERROR, "Read Error", "Bad blocks", "VTS_01_1.VOB", "IO Error", "Check surface")],
+                recommended_next_steps=[]
+            )
+            with patch("tkinter.messagebox.askyesno", return_value=False):
+                app._vcd_path.set("")
+                app._on_health_proceed_rip(rep_prob)
+                self.assertFalse(app._ripping)
+                self.assertEqual(app._vcd_path.get(), "")  # Not updated on cancel
+        finally:
+            app.destroy()
+
+    def test_export_diagnostic_report_txt_default_filename_format(self):
+        """Verify default filename generated uses valid datetime formatting and matches expected pattern."""
+        app = vcd_ripper.VCDRipperApp()
+        app.withdraw()
+        try:
+            rep = dvd_diagnostics.DiscHealthReport(
+                overall_status=dvd_diagnostics.HealthStatus.GOOD,
+                summary="Ready",
+                source_path=self.tmp_dir
+            )
+            captured_kwargs = {}
+            def mock_asksaveasfilename(**kwargs):
+                captured_kwargs.update(kwargs)
+                return ""  # simulate user cancel after checking initialfile
+
+            with patch("tkinter.filedialog.asksaveasfilename", side_effect=mock_asksaveasfilename):
+                app._export_diagnostic_report_txt(report=rep)
+
+            init_fn = captured_kwargs.get("initialfile", "")
+            self.assertTrue(
+                re.match(r"^Disc_Health_Report_\d{8}_\d{6}\.txt$", init_fn),
+                f"Default filename '{init_fn}' does not match expected Disc_Health_Report_YYYYMMDD_HHMMSS.txt format"
+            )
+        finally:
+            app.destroy()
+
+    def test_export_diagnostic_report_txt_success_and_utf8(self):
+        """Verify export succeeds, writes valid UTF-8, and shows success messagebox."""
+        app = vcd_ripper.VCDRipperApp()
+        app.withdraw()
+        try:
+            rep = dvd_diagnostics.DiscHealthReport(
+                overall_status=dvd_diagnostics.HealthStatus.GOOD,
+                summary="光碟健康良好，所有檢查均通過。",
+                source_path=self.tmp_dir,
+                media_type="DVD-Video",
+                checks=[dvd_diagnostics.CheckItem("光碟存取", dvd_diagnostics.CheckStatus.PASSED, "正常", 0.05)]
+            )
+            target_out = os.path.join(self.tmp_dir, "export_success_test.txt")
+
+            with patch("tkinter.filedialog.asksaveasfilename", return_value=target_out), \
+                 patch("tkinter.messagebox.showinfo") as mock_info, \
+                 patch("tkinter.messagebox.showerror") as mock_error:
+                app._export_diagnostic_report_txt(report=rep)
+
+                self.assertTrue(os.path.isfile(target_out), "Exported report file was not created on disk")
+                mock_info.assert_called_once()
+                mock_error.assert_not_called()
+
+                with open(target_out, "r", encoding="utf-8") as f:
+                    txt = f.read()
+                self.assertIn("光碟健康良好", txt)
+                self.assertIn("DISC RIPPER PRO", txt)
+        finally:
+            app.destroy()
+
+    def test_export_diagnostic_report_txt_user_cancellation(self):
+        """Verify user cancelling Save As dialog returns cleanly without false error or messagebox."""
+        app = vcd_ripper.VCDRipperApp()
+        app.withdraw()
+        try:
+            rep = dvd_diagnostics.DiscHealthReport(
+                overall_status=dvd_diagnostics.HealthStatus.GOOD,
+                summary="Ready",
+                source_path=self.tmp_dir
+            )
+            with patch("tkinter.filedialog.asksaveasfilename", return_value=""), \
+                 patch("tkinter.messagebox.showinfo") as mock_info, \
+                 patch("tkinter.messagebox.showerror") as mock_error:
+                # Must return cleanly without exception
+                app._export_diagnostic_report_txt(report=rep)
+                mock_info.assert_not_called()
+                mock_error.assert_not_called()
+        finally:
+            app.destroy()
+
+    def test_export_diagnostic_report_txt_permission_error_handling(self):
+        """Verify write/permission errors are handled gracefully and do not crash Tkinter callback."""
+        app = vcd_ripper.VCDRipperApp()
+        app.withdraw()
+        try:
+            rep = dvd_diagnostics.DiscHealthReport(
+                overall_status=dvd_diagnostics.HealthStatus.GOOD,
+                summary="Ready",
+                source_path=self.tmp_dir
+            )
+            target_out = os.path.join(self.tmp_dir, "protected", "report.txt")
+
+            with patch("tkinter.filedialog.asksaveasfilename", return_value=target_out), \
+                 patch("dvd_diagnostics.export_diagnostic_report_txt", side_effect=PermissionError("Access is denied")), \
+                 patch("tkinter.messagebox.showinfo") as mock_info, \
+                 patch("tkinter.messagebox.showerror") as mock_error:
+                # Must not raise unhandled exception
+                app._export_diagnostic_report_txt(report=rep)
+                mock_info.assert_not_called()
+                mock_error.assert_called_once()
+                self.assertIn("Access is denied", str(mock_error.call_args))
+        finally:
+            app.destroy()
+
+    def test_export_diagnostic_report_txt_atomic_cleanup_on_failure(self):
+        """Verify that atomic writing cleans up any partial temporary files on failure."""
+        rep = dvd_diagnostics.DiscHealthReport(
+            overall_status=dvd_diagnostics.HealthStatus.GOOD,
+            summary="Ready",
+            source_path=self.tmp_dir
+        )
+        target_out = os.path.join(self.tmp_dir, "atomic_test.txt")
+
+        # Mock Path.replace to simulate an error after writing to tmp
+        with patch.object(Path, "replace", side_effect=OSError("Disk full simulation")):
+            with self.assertRaises(OSError):
+                dvd_diagnostics.export_diagnostic_report_txt(rep, target_out)
+
+        # Confirm target does not exist and no .tmp files linger in the directory
+        self.assertFalse(os.path.exists(target_out))
+        tmp_files = [f for f in os.listdir(self.tmp_dir) if ".tmp" in f]
+        self.assertEqual(tmp_files, [], f"Lingering temporary files found: {tmp_files}")
+
+
+# ─────────────────────────────────────────────────────────────
+#  Dual-Screen / Multi-Monitor Window Positioning Tests
+# ─────────────────────────────────────────────────────────────
+class TestDualScreenWindowPositioning(unittest.TestCase):
+    """
+    Comprehensive tests ensuring that in dual-screen / multi-screen setups,
+    all dialogs (single rename, single chapter rename, batch rename, settings,
+    unsupported disc warning, disc health check) always appear on the exact
+    monitor where the main application resides, and never jump to the other screen.
+    """
+
+    def setUp(self):
+        vcd_ripper._HEADER_ICONS.clear()
+
+    def tearDown(self):
+        vcd_ripper._HEADER_ICONS.clear()
+
+    def test_get_monitor_work_area_returns_valid_tuple(self):
+        """get_monitor_work_area returns 4 integers (left, top, right, bottom)."""
+        root = tk.Tk()
+        root.withdraw()
+        try:
+            wa = vcd_ripper.get_monitor_work_area(root)
+            self.assertIsInstance(wa, tuple)
+            self.assertEqual(len(wa), 4)
+            x1, y1, x2, y2 = wa
+            self.assertIsInstance(x1, int)
+            self.assertIsInstance(y1, int)
+            self.assertIsInstance(x2, int)
+            self.assertIsInstance(y2, int)
+            self.assertGreater(x2, x1)
+            self.assertGreater(y2, y1)
+        finally:
+            root.destroy()
+
+    def test_position_window_primary_screen(self):
+        """When parent is on Primary Screen, dialog centers on Primary Screen."""
+        root = tk.Tk()
+        root.withdraw()
+        dlg = tk.Toplevel(root)
+        try:
+            with patch.object(vcd_ripper, "get_monitor_work_area", return_value=(0, 0, 1920, 1040)), \
+                 patch.object(root, "winfo_rootx", return_value=100), \
+                 patch.object(root, "winfo_rooty", return_value=100), \
+                 patch.object(root, "winfo_width", return_value=1200), \
+                 patch.object(root, "winfo_height", return_value=800):
+                nx, ny, dw, dh = vcd_ripper.position_window_on_parent(dlg, root, width=500, height=300)
+                self.assertGreaterEqual(nx, 0)
+                self.assertLessEqual(nx + dw, 1920)
+                self.assertGreaterEqual(ny, 0)
+                self.assertLessEqual(ny + dh, 1040)
+                # Centered: 100 + (1200 - 500) // 2 = 450
+                self.assertEqual(nx, 450)
+                # Centered: 100 + (800 - 300) // 2 = 350
+                self.assertEqual(ny, 350)
+        finally:
+            dlg.destroy()
+            root.destroy()
+
+    def test_position_window_left_secondary_screen(self):
+        """When parent is on Screen A (left secondary: -1920 to 0), dialog stays on Screen A with negative X."""
+        root = tk.Tk()
+        root.withdraw()
+        dlg = tk.Toplevel(root)
+        try:
+            # Screen A is on the left: (-1920, 0, 0, 1040). Screen B is primary (0, 0, 1920, 1040).
+            # Main app is on Screen A at (-1500, 100).
+            with patch.object(vcd_ripper, "get_monitor_work_area", return_value=(-1920, 0, 0, 1040)), \
+                 patch.object(root, "winfo_rootx", return_value=-1500), \
+                 patch.object(root, "winfo_rooty", return_value=100), \
+                 patch.object(root, "winfo_width", return_value=1200), \
+                 patch.object(root, "winfo_height", return_value=800):
+                nx, ny, dw, dh = vcd_ripper.position_window_on_parent(dlg, root, width=500, height=300)
+                # Must be strictly on Screen A (negative coordinates)
+                self.assertGreaterEqual(nx, -1920)
+                self.assertLessEqual(nx + dw, 0, "Dialog must NOT jump to Screen B (x >= 0)")
+                # -1500 + (1200 - 500) // 2 = -1150
+                self.assertEqual(nx, -1150)
+                self.assertEqual(ny, 350)
+        finally:
+            dlg.destroy()
+            root.destroy()
+
+    def test_position_window_right_secondary_screen(self):
+        """When parent is on Screen A (right secondary: 1920 to 3840), dialog stays on Screen A with X > 1920."""
+        root = tk.Tk()
+        root.withdraw()
+        dlg = tk.Toplevel(root)
+        try:
+            # Screen B is primary (0 to 1920). Screen A is on right: (1920 to 3840).
+            # Main app is on Screen A at (2100, 100).
+            with patch.object(vcd_ripper, "get_monitor_work_area", return_value=(1920, 0, 3840, 1040)), \
+                 patch.object(root, "winfo_rootx", return_value=2100), \
+                 patch.object(root, "winfo_rooty", return_value=100), \
+                 patch.object(root, "winfo_width", return_value=1200), \
+                 patch.object(root, "winfo_height", return_value=800):
+                nx, ny, dw, dh = vcd_ripper.position_window_on_parent(dlg, root, width=500, height=300)
+                self.assertGreaterEqual(nx, 1920, "Dialog must NOT jump to Screen B (x < 1920)")
+                self.assertLessEqual(nx + dw, 3840)
+                # 2100 + (1200 - 500) // 2 = 2450
+                self.assertEqual(nx, 2450)
+                self.assertEqual(ny, 350)
+        finally:
+            dlg.destroy()
+            root.destroy()
+
+    def test_single_title_rename_dialog_on_screen_a(self):
+        """Single title rename dialog opens centered on Screen A where the main software is located."""
+        root = tk.Tk()
+        root.withdraw()
+        try:
+            card_info = {
+                "filename": "Title 01",
+                "title_number": 1,
+                "disc_type": "DVD",
+                "size_mb": 500.0,
+                "duration": 600.0,
+                "chapter_count": 1,
+                "chapters_data": [{"chapter_number": 1, "duration": 600.0}]
+            }
+            card = vcd_ripper.VideoCard(root, card_info, index=0, on_toggle=lambda idx, s: None)
+
+            with patch.object(vcd_ripper, "get_monitor_work_area", return_value=(-1920, 0, 0, 1040)), \
+                 patch.object(root, "winfo_rootx", return_value=-1500), \
+                 patch.object(root, "winfo_rooty", return_value=100), \
+                 patch.object(root, "winfo_width", return_value=1200), \
+                 patch.object(root, "winfo_height", return_value=800):
+                captured_dialogs = []
+                orig_toplevel = tk.Toplevel
+
+                def mock_toplevel(*args, **kwargs):
+                    d = orig_toplevel(*args, **kwargs)
+                    captured_dialogs.append(d)
+                    return d
+
+                with patch("tkinter.Toplevel", side_effect=mock_toplevel):
+                    card._on_rename()
+
+                self.assertEqual(len(captured_dialogs), 1)
+                dlg = captured_dialogs[0]
+                try:
+                    dlg_x = dlg.winfo_x()
+                    self.assertGreaterEqual(dlg_x, -1920)
+                    self.assertLess(dlg_x, 0, f"Expected dialog on Screen A (-1920..0), but got x={dlg_x}")
+                finally:
+                    dlg.destroy()
+        finally:
+            root.destroy()
+
+    def test_single_chapter_rename_dialog_on_screen_a(self):
+        """Single chapter rename dialog opens centered on Screen A where the main software is located."""
+        root = tk.Tk()
+        root.withdraw()
+        try:
+            card_info = {
+                "filename": "Title 01",
+                "title_number": 1,
+                "disc_type": "DVD",
+                "size_mb": 500.0,
+                "duration": 600.0,
+                "chapter_count": 2,
+                "chapters_data": [
+                    {"chapter_number": 1, "start_time": 0.0, "end_time": 300.0, "duration": 300.0, "name": "Chapter 01"},
+                    {"chapter_number": 2, "start_time": 300.0, "end_time": 600.0, "duration": 300.0, "name": "Chapter 02"}
+                ]
+            }
+            card = vcd_ripper.VideoCard(root, card_info, index=0, on_toggle=lambda idx, s: None)
+
+            with patch.object(vcd_ripper, "get_monitor_work_area", return_value=(-1920, 0, 0, 1040)), \
+                 patch.object(root, "winfo_rootx", return_value=-1500), \
+                 patch.object(root, "winfo_rooty", return_value=100), \
+                 patch.object(root, "winfo_width", return_value=1200), \
+                 patch.object(root, "winfo_height", return_value=800):
+                captured_dialogs = []
+                orig_toplevel = tk.Toplevel
+
+                def mock_toplevel(*args, **kwargs):
+                    d = orig_toplevel(*args, **kwargs)
+                    captured_dialogs.append(d)
+                    return d
+
+                with patch("tkinter.Toplevel", side_effect=mock_toplevel):
+                    card._on_rename_chapter(1)
+
+                self.assertEqual(len(captured_dialogs), 1)
+                dlg = captured_dialogs[0]
+                try:
+                    dlg_x = dlg.winfo_x()
+                    self.assertGreaterEqual(dlg_x, -1920)
+                    self.assertLess(dlg_x, 0, f"Expected dialog on Screen A (-1920..0), but got x={dlg_x}")
+                finally:
+                    dlg.destroy()
+        finally:
+            root.destroy()
+
+    def test_batch_rename_dialog_on_screen_a(self):
+        """Batch rename dialog opens centered on Screen A where the main software is located."""
+        app = vcd_ripper.VCDRipperApp()
+        app.withdraw()
+        try:
+            app._videos = [{"filename": "Track 01", "size_mb": 100}]
+            with patch.object(vcd_ripper, "get_monitor_work_area", return_value=(-1920, 0, 0, 1040)), \
+                 patch.object(app, "winfo_rootx", return_value=-1500), \
+                 patch.object(app, "winfo_rooty", return_value=100), \
+                 patch.object(app, "winfo_width", return_value=1200), \
+                 patch.object(app, "winfo_height", return_value=800):
+                captured_dialogs = []
+                orig_toplevel = tk.Toplevel
+
+                def mock_toplevel(*args, **kwargs):
+                    d = orig_toplevel(*args, **kwargs)
+                    captured_dialogs.append(d)
+                    return d
+
+                with patch("tkinter.Toplevel", side_effect=mock_toplevel):
+                    app._batch_rename()
+
+                self.assertEqual(len(captured_dialogs), 1)
+                dlg = captured_dialogs[0]
+                try:
+                    dlg_x = dlg.winfo_x()
+                    self.assertGreaterEqual(dlg_x, -1920)
+                    self.assertLess(dlg_x, 0, f"Expected batch rename dialog on Screen A (-1920..0), but got x={dlg_x}")
+                finally:
+                    dlg.destroy()
+        finally:
+            app.destroy()
+
+    def test_settings_about_dialog_on_screen_a(self):
+        """Settings / About dialog opens on Screen A and stays on Screen A across scale and lang updates."""
+        app = vcd_ripper.VCDRipperApp()
+        app.withdraw()
+        try:
+            with patch.object(vcd_ripper, "get_monitor_work_area", return_value=(-1920, 0, 0, 1040)), \
+                 patch.object(app, "winfo_x", return_value=-1500), \
+                 patch.object(app, "winfo_y", return_value=100), \
+                 patch.object(app, "winfo_width", return_value=1200), \
+                 patch.object(app, "winfo_height", return_value=800):
+                app._show_about()
+                dlg = app._about_dialog
+                self.assertIsNotNone(dlg)
+                dlg_x = dlg.winfo_x()
+                self.assertGreaterEqual(dlg_x, -1920)
+                self.assertLess(dlg_x, 0, f"Expected Settings dialog on Screen A (-1920..0), but got x={dlg_x}")
+
+                # Verify dynamic scale update preserves Screen A placement
+                dlg.update_scale()
+                dlg_x2 = dlg.winfo_x()
+                self.assertGreaterEqual(dlg_x2, -1920)
+                self.assertLess(dlg_x2, 0, f"Expected Settings dialog on Screen A after scale update, but got x={dlg_x2}")
+
+                dlg.destroy()
+        finally:
+            app.destroy()
+
+    def test_unsupported_disc_dialog_on_screen_a(self):
+        """Unsupported disc warning dialog opens centered on Screen A where the main software is located."""
+        app = vcd_ripper.VCDRipperApp()
+        app.withdraw()
+        try:
+            with patch.object(vcd_ripper, "get_monitor_work_area", return_value=(-1920, 0, 0, 1040)), \
+                 patch.object(app, "winfo_rootx", return_value=-1500), \
+                 patch.object(app, "winfo_rooty", return_value=100), \
+                 patch.object(app, "winfo_width", return_value=1200), \
+                 patch.object(app, "winfo_height", return_value=800):
+                captured_dialogs = []
+                orig_toplevel = tk.Toplevel
+
+                def mock_toplevel(*args, **kwargs):
+                    d = orig_toplevel(*args, **kwargs)
+                    captured_dialogs.append(d)
+                    return d
+
+                with patch("tkinter.Toplevel", side_effect=mock_toplevel):
+                    app._show_unsupported_disc_dialog("D:", "Audio CD")
+
+                self.assertEqual(len(captured_dialogs), 1)
+                dlg = captured_dialogs[0]
+                try:
+                    dlg_x = dlg.winfo_x()
+                    self.assertGreaterEqual(dlg_x, -1920)
+                    self.assertLess(dlg_x, 0, f"Expected unsupported disc dialog on Screen A (-1920..0), but got x={dlg_x}")
+                finally:
+                    dlg.destroy()
+        finally:
+            app.destroy()
+
+    def test_disc_health_dialogs_on_screen_a(self):
+        """DiscHealthModeDialog, DiscHealthProgressDialog, and DiscHealthResultDialog all open on Screen A."""
+        root = tk.Tk()
+        root.withdraw()
+        try:
+            with patch.object(vcd_ripper, "get_monitor_work_area", return_value=(-1920, 0, 0, 1040)), \
+                 patch.object(root, "winfo_rootx", return_value=-1500), \
+                 patch.object(root, "winfo_rooty", return_value=100), \
+                 patch.object(root, "winfo_width", return_value=1200), \
+                 patch.object(root, "winfo_height", return_value=800):
+
+                # 1. Mode dialog
+                mode_dlg = vcd_ripper.DiscHealthModeDialog(root, "D:\\VIDEO_TS", on_start=lambda m: None)
+                try:
+                    self.assertGreaterEqual(mode_dlg.winfo_x(), -1920)
+                    self.assertLess(mode_dlg.winfo_x(), 0)
+                finally:
+                    mode_dlg.destroy()
+
+                # 2. Progress dialog
+                prog_dlg = vcd_ripper.DiscHealthProgressDialog(root, "Quick Check", on_cancel=lambda: None)
+                try:
+                    self.assertGreaterEqual(prog_dlg.winfo_x(), -1920)
+                    self.assertLess(prog_dlg.winfo_x(), 0)
+                finally:
+                    prog_dlg.destroy()
+
+                # 3. Result dialog
+                sample_report = dvd_diagnostics.DiscHealthReport(
+                    overall_status=dvd_diagnostics.HealthStatus.GOOD,
+                    summary="Test ok",
+                    source_path="D:\\VIDEO_TS"
+                )
+                res_dlg = vcd_ripper.DiscHealthResultDialog(root, sample_report)
+                try:
+                    self.assertGreaterEqual(res_dlg.winfo_x(), -1920)
+                    self.assertLess(res_dlg.winfo_x(), 0)
+                finally:
+                    res_dlg.destroy()
+        finally:
+            root.destroy()
+
+
+
+class TestDVDAudioTrackStabilityAndSelection(unittest.TestCase):
+    """Verify that Target Title and Audio Track comboboxes remain stable and do not jump on select all or chapter toggles."""
+
+    def setUp(self):
+        vcd_ripper._HEADER_ICONS.clear()
+
+    def tearDown(self):
+        vcd_ripper._HEADER_ICONS.clear()
+
+    def test_default_active_title_is_main_feature_index_0(self):
+        """When Title 1 is Main Feature, _populate_list sets _active_dvd_title_idx to 0."""
+        app = vcd_ripper.VCDRipperApp()
+        app.withdraw()
+        try:
+            t1 = {
+                "title_number": 1, "filename": "Title 01 (Main Feature)", "disc_type": "DVD",
+                "is_main_feature": True, "duration": 7200.0,
+                "chapters_data": [{"chapter_number": 1, "duration": 3600.0}, {"chapter_number": 2, "duration": 3600.0}],
+                "audio_tracks": [{"track_id": "T01_A01", "track_number": 1, "display_label": "Track 1 - English"}]
+            }
+            t2 = {
+                "title_number": 2, "filename": "Title 02", "disc_type": "DVD",
+                "is_main_feature": False, "duration": 300.0,
+                "chapters_data": [{"chapter_number": 1, "duration": 300.0}],
+                "audio_tracks": [{"track_id": "T02_A01", "track_number": 1, "display_label": "Track 1 - Stereo"}]
+            }
+            app._source_type = "DVD"
+            app._populate_list([t1, t2])
+
+            self.assertEqual(app._active_dvd_title_idx, 0)
+            self.assertEqual(app._target_title_var.get(), "Title 01 (Main Feature)")
+            self.assertEqual(app._audio_track_var.get(), "Track 1 - English")
+        finally:
+            app.destroy()
+
+    def test_default_active_title_is_main_feature_index_1(self):
+        """When Title 2 is Main Feature (e.g. Title 1 is short intro), _populate_list defaults to index 1."""
+        app = vcd_ripper.VCDRipperApp()
+        app.withdraw()
+        try:
+            t1 = {
+                "title_number": 1, "filename": "Title 01", "disc_type": "DVD",
+                "is_main_feature": False, "duration": 15.0,
+                "chapters_data": [{"chapter_number": 1, "duration": 15.0}],
+                "audio_tracks": [{"track_id": "T01_A01", "track_number": 1, "display_label": "Track 1 - Intro Audio"}]
+            }
+            t2 = {
+                "title_number": 2, "filename": "Title 02 (Main Feature)", "disc_type": "DVD",
+                "is_main_feature": True, "duration": 7200.0,
+                "chapters_data": [{"chapter_number": 1, "duration": 3600.0}, {"chapter_number": 2, "duration": 3600.0}],
+                "audio_tracks": [{"track_id": "T02_A01", "track_number": 1, "display_label": "Track 1 - Movie 5.1"}]
+            }
+            app._source_type = "DVD"
+            app._populate_list([t1, t2])
+
+            self.assertEqual(app._active_dvd_title_idx, 1)
+            self.assertEqual(app._target_title_var.get(), "Title 02 (Main Feature)")
+            self.assertEqual(app._audio_track_var.get(), "Track 1 - Movie 5.1")
+        finally:
+            app.destroy()
+
+    def test_select_all_preserves_main_feature_active_title(self):
+        """Clicking Select All reselects all chapters but does not jump Target Title away from Main Feature."""
+        app = vcd_ripper.VCDRipperApp()
+        app.withdraw()
+        try:
+            t1 = {
+                "title_number": 1, "filename": "Title 01 (Main Feature)", "disc_type": "DVD",
+                "is_main_feature": True, "duration": 7200.0,
+                "chapters_data": [{"chapter_number": 1, "duration": 3600.0}, {"chapter_number": 2, "duration": 3600.0}],
+                "audio_tracks": [{"track_id": "T01_A01", "track_number": 1, "display_label": "Track 1 - English"}]
+            }
+            t2 = {
+                "title_number": 2, "filename": "Title 02", "disc_type": "DVD",
+                "is_main_feature": False, "duration": 300.0,
+                "chapters_data": [{"chapter_number": 1, "duration": 300.0}],
+                "audio_tracks": [{"track_id": "T02_A01", "track_number": 1, "display_label": "Track 1 - Stereo"}]
+            }
+            app._source_type = "DVD"
+            app._populate_list([t1, t2])
+
+            self.assertEqual(app._target_title_var.get(), "Title 01 (Main Feature)")
+
+            # Call select_none then select_all
+            app._select_none()
+            app._select_all()
+
+            self.assertEqual(app._active_dvd_title_idx, 0)
+            self.assertEqual(app._target_title_var.get(), "Title 01 (Main Feature)")
+            self.assertEqual(app._audio_track_var.get(), "Track 1 - English")
+        finally:
+            app.destroy()
+
+    def test_single_chapter_click_does_not_jump_audio_track_title(self):
+        """Clicking individual chapters on any title must not jump the sidebar audio track title away."""
+        app = vcd_ripper.VCDRipperApp()
+        app.withdraw()
+        try:
+            t1 = {
+                "title_number": 1, "filename": "Title 01 (Main Feature)", "disc_type": "DVD",
+                "is_main_feature": True, "duration": 7200.0,
+                "chapters_data": [{"chapter_number": 1, "duration": 3600.0}, {"chapter_number": 2, "duration": 3600.0}],
+                "audio_tracks": [{"track_id": "T01_A01", "track_number": 1, "display_label": "Track 1 - English"}]
+            }
+            t2 = {
+                "title_number": 2, "filename": "Title 02", "disc_type": "DVD",
+                "is_main_feature": False, "duration": 300.0,
+                "chapters_data": [{"chapter_number": 1, "duration": 150.0}, {"chapter_number": 2, "duration": 150.0}],
+                "audio_tracks": [{"track_id": "T02_A01", "track_number": 1, "display_label": "Track 1 - Stereo"}]
+            }
+            app._source_type = "DVD"
+            app._populate_list([t1, t2])
+
+            # Initial state is Title 1 (Main Feature)
+            self.assertEqual(app._target_title_var.get(), "Title 01 (Main Feature)")
+
+            # User unchecks Chapter 1 on Title 2 (card index 1)
+            app._cards[1]._on_chapter_cb(1)
+            self.assertEqual(app._target_title_var.get(), "Title 01 (Main Feature)",
+                             "Clicking chapter on Title 2 must not jump Target Title away from Main Feature")
+            self.assertEqual(app._active_dvd_title_idx, 0)
+
+            # User unchecks Chapter 2 on Title 1 (card index 0)
+            app._cards[0]._on_chapter_cb(2)
+            self.assertEqual(app._target_title_var.get(), "Title 01 (Main Feature)")
+            self.assertEqual(app._active_dvd_title_idx, 0)
+
+            # User checks Chapter 1 back on Title 2
+            app._cards[1]._on_chapter_cb(1)
+            self.assertEqual(app._target_title_var.get(), "Title 01 (Main Feature)")
+            self.assertEqual(app._active_dvd_title_idx, 0)
+        finally:
+            app.destroy()
+
+    def test_card_title_toggle_does_not_jump_audio_track_title(self):
+        """Toggling a complete title card checkbox must not change the sidebar audio track title."""
+        app = vcd_ripper.VCDRipperApp()
+        app.withdraw()
+        try:
+            t1 = {
+                "title_number": 1, "filename": "Title 01 (Main Feature)", "disc_type": "DVD",
+                "is_main_feature": True, "duration": 7200.0,
+                "chapters_data": [{"chapter_number": 1, "duration": 3600.0}],
+                "audio_tracks": [{"track_id": "T01_A01", "track_number": 1, "display_label": "Track 1 - English"}]
+            }
+            t2 = {
+                "title_number": 2, "filename": "Title 02", "disc_type": "DVD",
+                "is_main_feature": False, "duration": 300.0,
+                "chapters_data": [{"chapter_number": 1, "duration": 300.0}],
+                "audio_tracks": [{"track_id": "T02_A01", "track_number": 1, "display_label": "Track 1 - Stereo"}]
+            }
+            app._source_type = "DVD"
+            app._populate_list([t1, t2])
+
+            self.assertEqual(app._target_title_var.get(), "Title 01 (Main Feature)")
+
+            # Toggle Title 2 card
+            app._cards[1]._chk_var.set(True)
+            app._cards[1]._toggle()
+
+            self.assertEqual(app._target_title_var.get(), "Title 01 (Main Feature)",
+                             "Checking Title 2 card must not jump Target Title away from Main Feature")
+            self.assertEqual(app._active_dvd_title_idx, 0)
+        finally:
+            app.destroy()
+
+    def test_explicit_combobox_title_change_updates_selector_and_tracks(self):
+        """User explicitly selecting Title 2 in the Target Title combobox updates selector and persists per-title tracks."""
+        app = vcd_ripper.VCDRipperApp()
+        app.withdraw()
+        try:
+            t1 = {
+                "title_number": 1, "filename": "Title 01 (Main Feature)", "disc_type": "DVD",
+                "is_main_feature": True, "duration": 7200.0,
+                "chapters_data": [{"chapter_number": 1, "duration": 3600.0}],
+                "audio_tracks": [
+                    {"track_id": "T01_A01", "track_number": 1, "display_label": "Track 1 - English"},
+                    {"track_id": "T01_A02", "track_number": 2, "display_label": "Track 2 - Commentary"}
+                ]
+            }
+            t2 = {
+                "title_number": 2, "filename": "Title 02", "disc_type": "DVD",
+                "is_main_feature": False, "duration": 300.0,
+                "chapters_data": [{"chapter_number": 1, "duration": 300.0}],
+                "audio_tracks": [
+                    {"track_id": "T02_A01", "track_number": 1, "display_label": "Track 1 - Stereo"},
+                    {"track_id": "T02_A02", "track_number": 2, "display_label": "Track 2 - Director"}
+                ]
+            }
+            app._source_type = "DVD"
+            app._populate_list([t1, t2])
+
+            self.assertEqual(app._target_title_var.get(), "Title 01 (Main Feature)")
+            self.assertEqual(app._audio_track_var.get(), "Track 1 - English")
+
+            # User explicitly switches to Title 02 via dropdown
+            app._target_title_cb.current(1)
+            app._on_audio_track_title_changed()
+
+            self.assertEqual(app._active_dvd_title_idx, 1)
+            self.assertEqual(app._target_title_var.get(), "Title 02")
+            self.assertEqual(app._audio_track_var.get(), "Track 1 - Stereo")
+
+            # Select Track 2 (Director) for Title 02
+            app._audio_track_cb.current(1)
+            app._on_audio_track_selected()
+            self.assertEqual(app._dvd_selected_audio_tracks.get(2), "T02_A02")
+
+            # Switch back to Title 01 (Main Feature)
+            app._target_title_cb.current(0)
+            app._on_audio_track_title_changed()
+            self.assertEqual(app._active_dvd_title_idx, 0)
+            self.assertEqual(app._target_title_var.get(), "Title 01 (Main Feature)")
+            self.assertEqual(app._audio_track_var.get(), "Track 1 - English")
+
+            # Switch back to Title 02 -> verify Director track selection was remembered!
+            app._target_title_cb.current(1)
+            app._on_audio_track_title_changed()
+            self.assertEqual(app._active_dvd_title_idx, 1)
+            self.assertEqual(app._audio_track_var.get(), "Track 2 - Director")
+        finally:
+            app.destroy()
+
+    def test_clear_actions_reset_audio_tracks_and_active_idx(self):
+        """_clear_disc_info and _clear_all_action reset _dvd_selected_audio_tracks and _active_dvd_title_idx."""
+        app = vcd_ripper.VCDRipperApp()
+        app.withdraw()
+        try:
+            app._dvd_selected_audio_tracks[1] = "T01_A02"
+            app._dvd_selected_audio_tracks[2] = "T02_A01"
+            app._active_dvd_title_idx = 1
+
+            app._clear_disc_info()
+            self.assertEqual(len(app._dvd_selected_audio_tracks), 0)
+            self.assertEqual(app._active_dvd_title_idx, 0)
+
+            app._dvd_selected_audio_tracks[1] = "T01_A02"
+            app._active_dvd_title_idx = 1
+            app._clear_all_action()
+            self.assertEqual(len(app._dvd_selected_audio_tracks), 0)
+            self.assertEqual(app._active_dvd_title_idx, 0)
+        finally:
+            app.destroy()
+
+
+class TestDefaultLanguageAndScaleSettings(unittest.TestCase):
+    """Verifies that first startup defaults to English language and 100% UI scale,
+
+    and that user customization is remembered across application restarts.
+    """
+
+    def setUp(self):
+        self._orig_get_cfg = vcd_ripper.I18n._get_config_path
+        self._orig_lang = vcd_ripper.i18n.lang
+        self._orig_scale = vcd_ripper.i18n.scale
+
+    def tearDown(self):
+        vcd_ripper.I18n._get_config_path = self._orig_get_cfg
+        vcd_ripper.i18n.lang = self._orig_lang
+        vcd_ripper.i18n.scale = self._orig_scale
+
+    def test_default_first_launch_language_is_english(self):
+        """When no config file exists, the initial language defaults to English."""
+        with tempfile.TemporaryDirectory() as td:
+            cfg_path = os.path.join(td, "config.json")
+            vcd_ripper.I18n._get_config_path = staticmethod(lambda for_write=False, *a, **k: cfg_path)
+
+            inst = vcd_ripper.I18n()
+            self.assertEqual(inst.lang, "en")
+            self.assertEqual(inst.t("header.title"), "Disc Ripper Pro")
+            self.assertEqual(inst.t("rip.start"), "Start Ripping")
+
+    def test_default_first_launch_scale_is_100_percent(self):
+        """When no config file exists, the initial UI scale defaults to 100%."""
+        with tempfile.TemporaryDirectory() as td:
+            cfg_path = os.path.join(td, "config.json")
+            vcd_ripper.I18n._get_config_path = staticmethod(lambda for_write=False, *a, **k: cfg_path)
+
+            inst = vcd_ripper.I18n()
+            self.assertEqual(inst.scale, "100%")
+            self.assertEqual(inst.get_scale_factor(), 1.0)
+
+    def test_user_language_change_persistence_and_restore(self):
+        """User changing language is saved to config.json and restored upon restart."""
+        with tempfile.TemporaryDirectory() as td:
+            cfg_path = os.path.join(td, "config.json")
+            vcd_ripper.I18n._get_config_path = staticmethod(lambda for_write=False, *a, **k: cfg_path)
+
+            # 1. First run: default is English
+            inst1 = vcd_ripper.I18n()
+            self.assertEqual(inst1.lang, "en")
+
+            # 2. User changes language to Simplified Chinese
+            inst1.switch("zh_CN")
+            self.assertEqual(inst1.lang, "zh_CN")
+            self.assertTrue(os.path.exists(cfg_path))
+            with open(cfg_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            self.assertEqual(data.get("lang"), "zh_CN")
+
+            # 3. Simulate restart -> loads Simplified Chinese
+            inst2 = vcd_ripper.I18n()
+            self.assertEqual(inst2.lang, "zh_CN")
+            self.assertEqual(inst2.t("rip.start"), "开始提取")
+
+            # 4. User changes language to Traditional Chinese
+            inst2.switch("zh_TW")
+            self.assertEqual(inst2.lang, "zh_TW")
+
+            # 5. Simulate restart -> loads Traditional Chinese
+            inst3 = vcd_ripper.I18n()
+            self.assertEqual(inst3.lang, "zh_TW")
+            self.assertEqual(inst3.t("rip.start"), "開始擷取")
+
+            # 6. User switches back to English
+            inst3.switch("en")
+            inst4 = vcd_ripper.I18n()
+            self.assertEqual(inst4.lang, "en")
+            self.assertEqual(inst4.t("rip.start"), "Start Ripping")
+
+    def test_user_scale_change_persistence_and_restore(self):
+        """User changing scale is saved to config.json and restored upon restart."""
+        with tempfile.TemporaryDirectory() as td:
+            cfg_path = os.path.join(td, "config.json")
+            vcd_ripper.I18n._get_config_path = staticmethod(lambda for_write=False, *a, **k: cfg_path)
+
+            # 1. First run: default is 100%
+            inst1 = vcd_ripper.I18n()
+            self.assertEqual(inst1.scale, "100%")
+            self.assertEqual(inst1.get_scale_factor(), 1.0)
+
+            # 2. User changes scale to 125%
+            inst1.switch_scale("125%")
+            self.assertEqual(inst1.scale, "125%")
+            self.assertEqual(inst1.get_scale_factor(), 1.25)
+            self.assertTrue(os.path.exists(cfg_path))
+            with open(cfg_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            self.assertEqual(data.get("scale"), "125%")
+
+            # 3. Simulate restart -> loads 125%
+            inst2 = vcd_ripper.I18n()
+            self.assertEqual(inst2.scale, "125%")
+            self.assertEqual(inst2.get_scale_factor(), 1.25)
+
+            # 4. User changes scale to 150%
+            inst2.switch_scale("150%")
+            inst3 = vcd_ripper.I18n()
+            self.assertEqual(inst3.scale, "150%")
+            self.assertEqual(inst3.get_scale_factor(), 1.5)
+
+            # 5. User changes scale back to 100%
+            inst3.switch_scale("100%")
+            inst4 = vcd_ripper.I18n()
+            self.assertEqual(inst4.scale, "100%")
+            self.assertEqual(inst4.get_scale_factor(), 1.0)
+
+    def test_portable_mode_isolation_ignores_stale_appdata(self):
+        """In portable mode (writable directory), a fresh instance with no portable config
+
+        starts cleanly with English and 100% scale without reading stale AppData configs.
+        """
+        with tempfile.TemporaryDirectory() as portable_dir, tempfile.TemporaryDirectory() as appdata_dir:
+            portable_cfg = os.path.join(portable_dir, "config.json")
+            appdata_cfg = os.path.join(appdata_dir, "config.json")
+
+            # Write a stale 150% zh_CN config into AppData
+            with open(appdata_cfg, "w", encoding="utf-8") as f:
+                json.dump({"lang": "zh_CN", "scale": "150%"}, f)
+
+            with patch("os.path.dirname", return_value=portable_dir), \
+                 patch.dict(os.environ, {"LOCALAPPDATA": appdata_dir}):
+                # Verify _get_config_path returns portable_cfg
+                resolved_read = vcd_ripper.I18n._get_config_path(for_write=False)
+                resolved_write = vcd_ripper.I18n._get_config_path(for_write=True)
+                self.assertEqual(resolved_read, portable_cfg)
+                self.assertEqual(resolved_write, portable_cfg)
+
+                # Initialize fresh portable instance
+                inst = vcd_ripper.I18n()
+                self.assertEqual(inst.lang, "en")
+                self.assertEqual(inst.scale, "100%")
+
+    def test_installed_mode_appdata_priority(self):
+        """In installed mode (non-writable exe directory), user settings in AppData
+
+        take precedence over read-only Program Files template.
+        """
+        with tempfile.TemporaryDirectory() as appdata_dir:
+            read_only_dir = "C:\\Program Files\\Disc Ripper Pro"
+            appdata_cfg = os.path.join(appdata_dir, "Disc Ripper Pro", "config.json")
+            os.makedirs(os.path.dirname(appdata_cfg), exist_ok=True)
+
+            with open(appdata_cfg, "w", encoding="utf-8") as f:
+                json.dump({"lang": "zh_TW", "scale": "125%"}, f)
+
+            def fake_open(p, *a, **k):
+                if p.startswith(read_only_dir):
+                    raise PermissionError("Access denied")
+                return open(p, *a, **k)
+
+            with patch("sys.frozen", True, create=True), \
+                 patch("sys.executable", os.path.join(read_only_dir, "Disc Ripper Pro.exe")), \
+                 patch.dict(os.environ, {"LOCALAPPDATA": appdata_dir}), \
+                 patch("builtins.open", side_effect=fake_open):
+                resolved = vcd_ripper.I18n._get_config_path(for_write=False)
+                self.assertEqual(resolved, appdata_cfg)
+
+    def test_corrupt_or_partial_config_falls_back_to_defaults(self):
+        """Missing or malformed fields safely fall back to English and 100% scale."""
+        with tempfile.TemporaryDirectory() as td:
+            cfg_path = os.path.join(td, "config.json")
+            vcd_ripper.I18n._get_config_path = staticmethod(lambda for_write=False, *a, **k: cfg_path)
+
+            # Config with only theme
+            with open(cfg_path, "w", encoding="utf-8") as f:
+                json.dump({"theme": "dark"}, f)
+
+            inst = vcd_ripper.I18n()
+            self.assertEqual(inst.lang, "en")
+            self.assertEqual(inst.scale, "100%")
+            self.assertEqual(inst.theme, "dark")
+
+            # Corrupted json
+            with open(cfg_path, "w", encoding="utf-8") as f:
+                f.write("{invalid_json:")
+
+            inst_corrupt = vcd_ripper.I18n()
+            self.assertEqual(inst_corrupt.lang, "en")
+            self.assertEqual(inst_corrupt.scale, "100%")
+
+    def test_vcd_ripper_app_defaults_at_100_percent_and_english(self):
+        """Main VCDRipperApp starts with English labels and 100% geometry scaling."""
+        with tempfile.TemporaryDirectory() as td:
+            cfg_path = os.path.join(td, "config.json")
+            vcd_ripper.I18n._get_config_path = staticmethod(lambda for_write=False, *a, **k: cfg_path)
+            vcd_ripper.i18n.lang = "en"
+            vcd_ripper.i18n.scale = "100%"
+
+            app = vcd_ripper.VCDRipperApp()
+            app.withdraw()
+            try:
+                self.assertEqual(app.i18n.lang, "en")
+                self.assertEqual(app.i18n.scale, "100%")
+                self.assertEqual(app.i18n.get_scale_factor(), 1.0)
+                self.assertIn("Disc Ripper Pro", app.title())
+            finally:
+                app.destroy()
+
+
+class TestBatchRenameEnterKeyNavigation(unittest.TestCase):
+    """Verifies that in the Batch rename dialog, pressing Enter navigates
+
+    to the next track naming entry (consistent with Tab), Shift+Enter navigates
+    backward, and Enter on the last item focuses the Apply button.
+    """
+
+    def setUp(self):
+        self.app = vcd_ripper.VCDRipperApp()
+        self.app.deiconify()
+        self.app.focus_force()
+        self.app.update()
+
+    def tearDown(self):
+        if hasattr(self.app, "_batch_rename_dialog") and self.app._batch_rename_dialog:
+            try:
+                self.app._batch_rename_dialog.destroy()
+            except Exception:
+                pass
+        self.app.destroy()
+
+    def _setup_vcd_tracks(self, count=3):
+        tracks = []
+        for i in range(count):
+            tracks.append({
+                "filename": f"AVSEQ{i+1:02d}.DAT",
+                "custom_stem": f"Track_{i+1:02d}",
+                "disc_type": "VCD",
+                "path": f"D:\\MPEGAV\\AVSEQ{i+1:02d}.DAT",
+                "size_mb": 45.0,
+            })
+        self.app._source_type = "VCD"
+        self.app._populate_list(tracks)
+        self.app.update()
+
+    def _setup_dvd_titles(self):
+        titles = [
+            {
+                "title_number": 1,
+                "filename": "Title 01.mp4",
+                "is_main_feature": True,
+                "duration": 5400.0,
+                "size_mb": 4000.0,
+                "chapters_data": [
+                    {"chapter_number": 1, "name": "Chapter 01", "duration": 300.0},
+                    {"chapter_number": 2, "name": "Chapter 02", "duration": 300.0}
+                ]
+            },
+            {
+                "title_number": 2,
+                "filename": "Title 02.mp4",
+                "is_main_feature": False,
+                "duration": 900.0,
+                "size_mb": 500.0,
+                "chapters_data": []
+            }
+        ]
+        self.app._source_type = "DVD"
+        self.app._populate_list(titles)
+        self.app.update()
+
+    def test_enter_navigates_to_next_track_in_manual_mode(self):
+        """Pressing Enter in a manual track entry moves focus to the next track entry."""
+        self._setup_vcd_tracks(3)
+        self.app._batch_rename()
+        dlg = self.app._batch_rename_dialog
+        self.assertIsNotNone(dlg)
+        dlg.focus_force()
+        self.app.update()
+
+        # Track 0: Trigger Enter
+        dlg._manual_widgets[0][2].focus_force()
+        self.app.update()
+        dlg._on_enter_track(None, 0)
+        self.app.update()
+        self.assertEqual(dlg.focus_get(), dlg._manual_widgets[1][2])
+
+        # Track 1: Trigger Enter
+        dlg._on_enter_track(None, 1)
+        self.app.update()
+        self.assertEqual(dlg.focus_get(), dlg._manual_widgets[2][2])
+
+        # Track 2 (last track): Trigger Enter -> focuses Apply button
+        dlg._on_enter_track(None, 2)
+        self.app.update()
+        self.assertEqual(dlg.focus_get(), dlg._apply_btn)
+
+    def test_shift_enter_navigates_to_previous_track(self):
+        """Pressing Shift+Enter in a manual track entry moves focus to the previous track entry."""
+        self._setup_vcd_tracks(3)
+        self.app._batch_rename()
+        dlg = self.app._batch_rename_dialog
+        dlg.focus_force()
+        self.app.update()
+
+        # Start at Track 2
+        dlg._manual_widgets[2][2].focus_force()
+        self.app.update()
+        dlg._on_shift_enter_track(None, 2)
+        self.app.update()
+        self.assertEqual(dlg.focus_get(), dlg._manual_widgets[1][2])
+
+        # Shift+Enter on Track 1 moves to Track 0
+        dlg._on_shift_enter_track(None, 1)
+        self.app.update()
+        self.assertEqual(dlg.focus_get(), dlg._manual_widgets[0][2])
+
+    def test_sequential_mode_enter_navigation(self):
+        """In sequential mode, Enter moves: Base Name -> Start Index -> Suffix 1 -> Suffix 2 -> Apply."""
+        self._setup_vcd_tracks(2)
+        self.app._batch_rename()
+        dlg = self.app._batch_rename_dialog
+        dlg.focus_force()
+        self.app.update()
+
+        # Enable sequential mode
+        dlg._seq_enabled.set(True)
+        self.app.update()
+
+        # Enter on Base Name -> moves to Start Index
+        dlg._base_ent.focus_force()
+        self.app.update()
+        dlg._base_ent.event_generate("<Key-Return>")
+        self.app.update()
+        self.assertEqual(dlg.focus_get(), dlg._start_ent)
+
+        # Enter on Start Index -> moves to Suffix Entry 0
+        dlg._start_ent.focus_force()
+        self.app.update()
+        dlg._start_ent.event_generate("<Key-Return>")
+        self.app.update()
+        self.assertEqual(dlg.focus_get(), dlg._seq_widgets[0][3])
+
+        # Enter on Suffix Entry 0 -> moves to Suffix Entry 1
+        dlg._on_enter_track(None, 0)
+        self.app.update()
+        self.assertEqual(dlg.focus_get(), dlg._seq_widgets[1][3])
+
+        # Enter on Suffix Entry 1 (last) -> moves to Apply button
+        dlg._on_enter_track(None, 1)
+        self.app.update()
+        self.assertEqual(dlg.focus_get(), dlg._apply_btn)
+
+    def test_enter_on_apply_button_applies_changes(self):
+        """Pressing Enter on the Apply button applies names and closes the dialog."""
+        self._setup_vcd_tracks(2)
+        self.app._batch_rename()
+        dlg = self.app._batch_rename_dialog
+        dlg.focus_force()
+        self.app.update()
+
+        dlg._entry_vars[0].set("My_Custom_Track_01")
+        dlg._entry_vars[1].set("My_Custom_Track_02")
+
+        dlg._apply_btn.focus_force()
+        self.app.update()
+        dlg._apply_btn.event_generate("<Key-Return>")
+        self.app.update()
+
+        # Dialog should be destroyed
+        self.assertIsNone(self.app._batch_rename_dialog)
+
+        # Videos should have updated stems
+        self.assertEqual(self.app._videos[0]["custom_stem"], "My_Custom_Track_01")
+        self.assertEqual(self.app._videos[1]["custom_stem"], "My_Custom_Track_02")
+
+    def test_dvd_titles_and_chapters_enter_navigation(self):
+        """DVD titles and chapters seamlessly navigate down with Enter key."""
+        self._setup_dvd_titles()
+        self.app._batch_rename()
+        dlg = self.app._batch_rename_dialog
+        self.assertIsNotNone(dlg)
+        dlg.focus_force()
+        self.app.update()
+
+        # There are 3 batch items: Title 1, Chapter 1, Chapter 2, Title 2 -> total 4 items
+        self.assertEqual(len(dlg._manual_widgets), 4)
+
+        # Enter through all 4 items
+        dlg._manual_widgets[0][2].focus_force()
+        self.app.update()
+        dlg._on_enter_track(None, 0)
+        self.app.update()
+        self.assertEqual(dlg.focus_get(), dlg._manual_widgets[1][2])
+
+        dlg._on_enter_track(None, 1)
+        self.app.update()
+        self.assertEqual(dlg.focus_get(), dlg._manual_widgets[2][2])
+
+        dlg._on_enter_track(None, 2)
+        self.app.update()
+        self.assertEqual(dlg.focus_get(), dlg._manual_widgets[3][2])
+
+        # Last item -> Apply button
+        dlg._on_enter_track(None, 3)
+        self.app.update()
+        self.assertEqual(dlg.focus_get(), dlg._apply_btn)
+
+
+class TestDVDScanStabilityAndThreadSafety(unittest.TestCase):
+    def test_handbrake_scan_includes_previews_zero(self):
+        """Verifies that HandBrake scan includes --previews 0 to avoid optical seeking hangs."""
+        with tempfile.TemporaryDirectory() as td:
+            video_ts = os.path.join(td, "VIDEO_TS")
+            os.makedirs(video_ts)
+            with open(os.path.join(video_ts, "VIDEO_TS.IFO"), "wb") as f:
+                f.write(b"DVDVIDEO-VMG" + b"\x00" * 2036)
+            fake_hb = os.path.join(td, "HandBrakeCLI.exe")
+            with open(fake_hb, "w") as f:
+                f.write("fake")
+
+            calls = []
+            def fake_run(cmd, **kwargs):
+                calls.append(cmd)
+                m = MagicMock()
+                m.returncode = 0
+                sample = {"TitleList": [{"AngleCount": 1, "Index": 1, "Duration": 100}]}
+                m.stdout = "JSON Title Set: " + json.dumps(sample)
+                m.stderr = ""
+                return m
+
+            with patch("subprocess.run", side_effect=fake_run):
+                dvd_engine.clear_handbrake_validation_cache()
+                res = dvd_engine.validate_handbrake_source(fake_hb, td)
+                self.assertTrue(res.success)
+                self.assertTrue(any("--previews" in c and "0" in c for c in calls))
+
+    def test_handbrake_fallback_to_no_dvdnav(self):
+        """Verifies that when standard dvdnav times out, --no-dvdnav fallback is attempted."""
+        with tempfile.TemporaryDirectory() as td:
+            video_ts = os.path.join(td, "VIDEO_TS")
+            os.makedirs(video_ts)
+            with open(os.path.join(video_ts, "VIDEO_TS.IFO"), "wb") as f:
+                f.write(b"DVDVIDEO-VMG" + b"\x00" * 2036)
+            fake_hb = os.path.join(td, "HandBrakeCLI.exe")
+            with open(fake_hb, "w") as f:
+                f.write("fake")
+
+            calls = []
+            def fake_run(cmd, **kwargs):
+                calls.append(cmd)
+                m = MagicMock()
+                if "--no-dvdnav" not in cmd:
+                    raise subprocess.TimeoutExpired(cmd=cmd, timeout=15)
+                m.returncode = 0
+                sample = {"TitleList": [{"AngleCount": 1, "Index": 1, "Duration": 100}]}
+                m.stdout = "JSON Title Set: " + json.dumps(sample)
+                m.stderr = ""
+                return m
+
+            with patch("subprocess.run", side_effect=fake_run):
+                dvd_engine.clear_handbrake_validation_cache()
+                res = dvd_engine.validate_handbrake_source(fake_hb, td)
+                self.assertTrue(res.success)
+                self.assertTrue(any("--no-dvdnav" in c for c in calls))
+
+    def test_progress_callback_invoked_during_scan(self):
+        """Verifies that scan_dvd_titles invokes progress_callback with dynamic percentages."""
+        with tempfile.TemporaryDirectory() as td:
+            video_ts = os.path.join(td, "VIDEO_TS")
+            os.makedirs(video_ts)
+            with open(os.path.join(video_ts, "VIDEO_TS.IFO"), "wb") as f:
+                f.write(b"DVDVIDEO-VMG" + b"\x00" * 2036)
+
+            progress_reports = []
+            def on_progress(pct, msg):
+                progress_reports.append((pct, msg))
+
+            with patch("dvd_engine.find_handbrake", return_value=None):
+                dvd_engine.scan_dvd_titles(td, scanner_mode="direct_ifo", progress_callback=on_progress)
+            self.assertTrue(len(progress_reports) > 0)
+            self.assertTrue(any(p[0] >= 10 for p in progress_reports))
+
+    def test_log_console_thread_safe_calling(self):
+        """Verifies LogConsole.log can be safely called from multiple concurrent background threads without crashing."""
+        import tkinter as tk
+        import threading
+        root = tk.Tk()
+        root.withdraw()
+        try:
+            console = vcd_ripper.LogConsole(root)
+            errors = []
+            def worker(idx):
+                try:
+                    for i in range(20):
+                        console.log(f"Worker {idx} msg {i}", "info")
+                except Exception as e:
+                    errors.append(e)
+
+            threads = [threading.Thread(target=worker, args=(t,)) for t in range(5)]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join()
+            root.update()
+            self.assertEqual(len(errors), 0)
+        finally:
+            root.destroy()
+
+
+class TestDvdEjectAndVcdDetectionBugFix(unittest.TestCase):
+    """
+    Tests for disc change recognition: ripping DVD -> ejecting DVD -> inserting VCD.
+    Ensures that stale volume caches and handles are flushed, media change errors
+    are properly retried, and VCD media is immediately detected without app restart.
+    """
+    def setUp(self):
+        self.temp_dir = tempfile.mkdtemp()
+
+    def tearDown(self):
+        try:
+            shutil.rmtree(self.temp_dir, ignore_errors=True)
+        except Exception:
+            pass
+
+    def test_flush_optical_drive_cache_safety(self):
+        """Verifies flush_optical_drive_cache runs safely on valid and invalid paths."""
+        self.assertFalse(disc_detector.flush_optical_drive_cache(""))
+        self.assertFalse(disc_detector.flush_optical_drive_cache("not_a_drive"))
+        # Non-existent drive letter should complete safely without raising unhandled exceptions
+        disc_detector.flush_optical_drive_cache("Z:\\")
+
+    def test_clear_disc_info_resets_source_type_and_clears_caches(self):
+        """_clear_disc_info must reset _source_type to NONE, reset _last_disc_vol_name, and clear DVD caches."""
+        app = vcd_ripper.VCDRipperApp()
+        app.withdraw()
+        try:
+            app._source_type = "DVD"
+            app._source_disc_type = "DVD-Video"
+            app._last_disc_vol_name = "MY_DVD"
+            app._vcd_path.set("D:\\")
+            dvd_engine._dvdvideo_probe_cache[("fake", "fake", 1)] = (True, "fake")
+
+            app._clear_disc_info()
+
+            self.assertEqual(app._source_type, "NONE")
+            self.assertEqual(app._source_disc_type, "")
+            self.assertIsNone(app._last_disc_vol_name)
+            self.assertEqual(app._vcd_path.get(), "")
+            self.assertEqual(len(dvd_engine._dvdvideo_probe_cache), 0)
+        finally:
+            app.destroy()
+
+    def test_rip_done_clears_dvd_engine_caches(self):
+        """_rip_done must clear HandBrake and DVDVideo probe caches."""
+        app = vcd_ripper.VCDRipperApp()
+        app.withdraw()
+        try:
+            dvd_engine._dvdvideo_probe_cache[("fake", "fake", 1)] = (True, "fake")
+            with patch("vcd_ripper.messagebox.askyesno", return_value=False):
+                app._rip_done(1, 1, 0, self.temp_dir)
+            self.assertEqual(len(dvd_engine._dvdvideo_probe_cache), 0)
+        finally:
+            app.destroy()
+
+    def test_detect_disc_media_changed_retries_and_detects_vcd(self):
+        """When an optical drive raises ERROR_MEDIA_CHANGED (1110), detect_disc flushes cache and retries."""
+        vcd_entries = [
+            Path("D:\\MPEGAV"),
+            Path("D:\\VCD"),
+        ]
+        mpegav_dat = [
+            Path("D:\\MPEGAV\\AVSEQ01.DAT"),
+        ]
+
+        attempt = [0]
+        def mock_iterdir(p_self):
+            p_str = str(p_self).upper()
+            if p_str in ("D:\\", "D:"):
+                attempt[0] += 1
+                if attempt[0] == 1:
+                    err = OSError("Media changed")
+                    err.winerror = 1110
+                    raise err
+                return iter(vcd_entries)
+            elif "MPEGAV" in p_str:
+                return iter(mpegav_dat)
+            return iter([])
+
+        with patch.object(Path, "exists", lambda s: True), \
+             patch.object(Path, "is_dir", lambda s: True), \
+             patch.object(Path, "is_file", lambda s: True), \
+             patch.object(Path, "iterdir", mock_iterdir), \
+             patch("disc_detector.flush_optical_drive_cache") as mock_flush:
+            
+            res = disc_detector.detect_disc("D:\\")
+            self.assertTrue(res.is_vcd)
+            self.assertFalse(res.is_dvd)
+            self.assertEqual(res.disc_type, "VCD")
+            self.assertTrue(mock_flush.called)
+
+    def test_stale_video_ts_directory_error_does_not_mask_vcd(self):
+        """A stale VIDEO_TS entry that throws an OSError when read must not falsely report DVD-Video."""
+        stale_video_ts = Path("D:\\VIDEO_TS")
+        vcd_mpegav = Path("D:\\MPEGAV")
+        root_items = [stale_video_ts, vcd_mpegav]
+
+        def mock_iterdir(p_self):
+            p_str = str(p_self).upper()
+            if p_str in ("D:\\", "D:"):
+                return iter(root_items)
+            elif "VIDEO_TS" in p_str:
+                raise OSError(1117, "I/O error reading stale sectors")
+            elif "MPEGAV" in p_str:
+                return iter([Path("D:\\MPEGAV\\AVSEQ01.DAT")])
+            return iter([])
+
+        with patch.object(Path, "exists", lambda s: True), \
+             patch.object(Path, "is_dir", lambda s: True), \
+             patch.object(Path, "is_file", lambda s: True), \
+             patch.object(Path, "iterdir", mock_iterdir), \
+             patch("disc_detector.flush_optical_drive_cache"):
+
+            res = disc_detector.detect_disc("D:\\")
+            self.assertTrue(res.is_vcd)
+            self.assertFalse(res.is_dvd)
+            self.assertEqual(res.disc_type, "VCD")
+
+    def test_full_dvd_rip_eject_and_vcd_insertion_flow(self):
+        """Simulates full flow: DVD rip finished -> DVD ejected -> VCD inserted -> VCD recognized."""
+        app = vcd_ripper.VCDRipperApp()
+        app.withdraw()
+        try:
+            # 1. Start with DVD loaded and active
+            app._source_type = "DVD"
+            app._source_disc_type = "DVD-Video"
+            app._vcd_path.set("D:\\")
+            app._last_disc_vol_name = "MY_MOVIE_DVD"
+            app._update_format_visibility_for_source()
+            self.assertEqual(app._source_type, "DVD")
+
+            # 2. Complete DVD rip
+            with patch("vcd_ripper.messagebox.askyesno", return_value=False):
+                app._rip_done(1, 1, 0, self.temp_dir)
+
+            # 3. Simulate Eject
+            app._clear_disc_info()
+            self.assertEqual(app._source_type, "NONE")
+            self.assertEqual(app._vcd_path.get(), "")
+            self.assertIsNone(app._last_disc_vol_name)
+
+            # 4. User inserts VCD on D:\
+            vcd_check = disc_detector.DiscCheckResult(True, "VCD", "Found DAT video files in MPEGAV", is_vcd=True, is_dvd=False)
+            scanned_path = []
+            def mock_scan_disc():
+                scanned_path.append(app._vcd_path.get())
+
+            app._scan_disc = mock_scan_disc
+            orig_after = app.after
+            def mock_after(ms, func=None, *args):
+                if func == mock_scan_disc:
+                    func(*args)
+                    return "timer"
+                return orig_after(ms, func, *args)
+            app.after = mock_after
+
+            with patch("vcd_ripper.get_volume_label", return_value="VCD_DISC_01"):
+                app._apply_poll_results(["D:\\"], [("D:\\", vcd_check)], [], [], False, None)
+
+            # 5. Verify app transitioned to VCD and initiated scan
+            self.assertEqual(app._source_type, "VCD")
+            self.assertEqual(app._vcd_path.get(), "D:\\")
+            self.assertEqual(app._last_disc_vol_name, "VCD_DISC_01")
+            self.assertEqual(len(scanned_path), 1)
+            self.assertEqual(scanned_path[0], "D:\\")
+        finally:
+            app.destroy()
+
+
+class TestNotificationFeature(unittest.TestCase):
+    """
+    Tests for the Windows Rip Completion Notification feature:
+    - Default setting (Enabled / True)
+    - Toggle functionality & callback notification
+    - Config file persistence (config.json)
+    - Settings dialog UI integration & localization
+    - Automatic dispatch upon rip completion in _rip_done
+    - Suppression when cancelled or disabled
+    - WinRT toast XML payload formatting (software name, icon, success/fail stats)
+    - Fallback balloon mechanism
+    """
+    def setUp(self):
+        self.temp_dir = tempfile.mkdtemp()
+        self.mock_config_path = os.path.join(self.temp_dir, "config.json")
+
+    def tearDown(self):
+        try:
+            shutil.rmtree(self.temp_dir, ignore_errors=True)
+        except Exception:
+            pass
+
+    def test_i18n_default_notification_is_true(self):
+        """Notification setting must default to True (enabled)."""
+        with patch.object(vcd_ripper.I18n, "_get_config_path", staticmethod(lambda *a, **kw: self.mock_config_path)):
+            i18n = vcd_ripper.I18n()
+            self.assertTrue(hasattr(i18n, "notification"))
+            self.assertTrue(i18n.notification)
+
+    def test_i18n_switch_notification_and_callback(self):
+        """switch_notification must toggle notification state and invoke callback."""
+        with patch.object(vcd_ripper.I18n, "_get_config_path", staticmethod(lambda *a, **kw: self.mock_config_path)):
+            i18n = vcd_ripper.I18n()
+            cb_calls = []
+            i18n.set_notification_callback(lambda val: cb_calls.append(val))
+
+            i18n.switch_notification(False)
+            self.assertFalse(i18n.notification)
+            self.assertEqual(cb_calls, [False])
+
+            i18n.switch_notification(True)
+            self.assertTrue(i18n.notification)
+            self.assertEqual(cb_calls, [False, True])
+
+    def test_notification_config_persistence(self):
+        """Notification state must persist to and load from config.json."""
+        with patch.object(vcd_ripper.I18n, "_get_config_path", staticmethod(lambda *a, **kw: self.mock_config_path)):
+            i18n1 = vcd_ripper.I18n()
+            i18n1.switch_notification(False)
+
+            self.assertTrue(os.path.exists(self.mock_config_path))
+            with open(self.mock_config_path, "r", encoding="utf-8") as f:
+                saved = json.load(f)
+            self.assertIn("notification", saved)
+            self.assertFalse(saved["notification"])
+
+            # Reload with a new I18n instance
+            i18n2 = vcd_ripper.I18n()
+            self.assertFalse(i18n2.notification)
+
+            i18n2.switch_notification(True)
+            with open(self.mock_config_path, "r", encoding="utf-8") as f:
+                saved2 = json.load(f)
+            self.assertTrue(saved2["notification"])
+
+    def test_settings_dialog_notification_toggle_and_localization(self):
+        """Settings dialog Category B must contain notification row and toggle correctly."""
+        orig_lang = vcd_ripper.i18n.lang
+        app = vcd_ripper.VCDRipperApp()
+        app.withdraw()
+        try:
+            app.i18n.notification = True
+            app._show_about()
+            dlg = getattr(app, "_about_dialog", None)
+            self.assertIsNotNone(dlg)
+            self.assertTrue(hasattr(dlg, "notification_buttons"))
+            self.assertIn(True, dlg.notification_buttons)
+            self.assertIn(False, dlg.notification_buttons)
+
+            btn_true = dlg.notification_buttons[True]
+            btn_false = dlg.notification_buttons[False]
+
+            # Click Disabled button
+            btn_false.invoke()
+            self.assertFalse(app.i18n.notification)
+
+            # Click Enabled button
+            btn_true.invoke()
+            self.assertTrue(app.i18n.notification)
+
+            # Test localization updates in dialog
+            app.i18n.switch("zh_CN")
+            self.assertEqual(btn_true.cget("text"), "开启")
+            self.assertEqual(btn_false.cget("text"), "关闭")
+
+            app.i18n.switch("zh_TW")
+            self.assertEqual(btn_true.cget("text"), "開啟")
+            self.assertEqual(btn_false.cget("text"), "關閉")
+
+            app.i18n.switch("en")
+            self.assertEqual(btn_true.cget("text"), "Enabled")
+            self.assertEqual(btn_false.cget("text"), "Disabled")
+
+            dlg.destroy()
+        finally:
+            app.i18n.switch(orig_lang)
+            app.destroy()
+
+    def test_rip_done_dispatches_notification_when_enabled(self):
+        """_rip_done must trigger _send_windows_notification when ripping finishes and not cancelled."""
+        app = vcd_ripper.VCDRipperApp()
+        app.withdraw()
+        try:
+            app.i18n.notification = True
+            with patch.object(app, "_send_windows_notification") as mock_send, \
+                 patch("vcd_ripper.messagebox.askyesno", return_value=False), \
+                 patch("vcd_ripper.messagebox.showinfo", return_value=None), \
+                 patch("vcd_ripper.messagebox.showwarning", return_value=None):
+                app._rip_done(total=3, success=3, errors=0, out_folder=self.temp_dir, cancelled=False, timed_out=False)
+                mock_send.assert_called_once_with(
+                    total=3,
+                    success=3,
+                    errors=0,
+                    out_folder=self.temp_dir,
+                    cancelled=False,
+                    timed_out=False
+                )
+        finally:
+            app.destroy()
+
+    def test_rip_done_does_not_dispatch_notification_when_cancelled(self):
+        """_rip_done must not send notification when user cancelled the ripping process."""
+        app = vcd_ripper.VCDRipperApp()
+        app.withdraw()
+        try:
+            app.i18n.notification = True
+            with patch.object(app, "_send_windows_notification") as mock_send, \
+                 patch("vcd_ripper.messagebox.askyesno", return_value=False), \
+                 patch("vcd_ripper.messagebox.showinfo", return_value=None), \
+                 patch("vcd_ripper.messagebox.showwarning", return_value=None):
+                app._rip_done(total=3, success=1, errors=0, out_folder=self.temp_dir, cancelled=True, timed_out=False)
+                mock_send.assert_not_called()
+        finally:
+            app.destroy()
+
+    def test_send_windows_notification_suppressed_when_disabled(self):
+        """_send_windows_notification must return early if notification is disabled in Settings."""
+        app = vcd_ripper.VCDRipperApp()
+        app.withdraw()
+        try:
+            app.i18n.notification = False
+            with patch("vcd_ripper._send_windows_rip_notification") as mock_rip_notif:
+                app._send_windows_notification(total=2, success=2, errors=0, out_folder=self.temp_dir)
+                mock_rip_notif.assert_not_called()
+        finally:
+            app.destroy()
+
+    def test_send_windows_rip_notification_winrt_toast_xml(self):
+        """_send_windows_rip_notification must construct valid WinRT XML with app name, icon, and counts."""
+        import base64
+
+        captured_cmd = []
+        def mock_subprocess_run(cmd, *args, **kwargs):
+            captured_cmd.extend(cmd)
+            mock_res = MagicMock()
+            mock_res.returncode = 0
+            return mock_res
+
+        def mock_thread_sync(target=None, **kwargs):
+            if target:
+                target()
+            return MagicMock()
+
+        with patch("subprocess.run", side_effect=mock_subprocess_run), \
+             patch("threading.Thread", side_effect=mock_thread_sync), \
+             patch("sys.platform", "win32"):
+
+            vcd_ripper._send_windows_rip_notification(
+                app_name="Disc Ripper Pro",
+                total=5,
+                success=4,
+                errors=1,
+                out_folder="C:\\Media\\VCD",
+                cancelled=False,
+                timed_out=False,
+                lang="en"
+            )
+
+            self.assertTrue(len(captured_cmd) > 0)
+            self.assertIn("-EncodedCommand", captured_cmd)
+            idx = captured_cmd.index("-EncodedCommand")
+            encoded_str = captured_cmd[idx + 1]
+            decoded_ps = base64.b64decode(encoded_str).decode("utf-16le")
+
+            # Check for software identity
+            self.assertIn("<text>Disc Ripper Pro</text>", decoded_ps)
+            self.assertIn(vcd_ripper.APP_USER_MODEL_ID, decoded_ps)
+
+            # Check for icon element
+            self.assertIn('hint-crop="circle"', decoded_ps)
+            self.assertIn("CompactDisc", decoded_ps)
+
+            # Check for rip stats
+            self.assertIn("Succeeded: 4", decoded_ps)
+            self.assertIn("Failed: 1", decoded_ps)
+            self.assertIn("Total: 5", decoded_ps)
+
+    def test_send_windows_rip_notification_fallback_to_balloon(self):
+        """If WinRT toast fails or throws, _send_windows_rip_notification must fall back to balloon notification."""
+        def mock_thread_sync(target=None, **kwargs):
+            if target:
+                target()
+            return MagicMock()
+
+        with patch("subprocess.run", side_effect=Exception("WinRT not supported")), \
+             patch("vcd_ripper._show_balloon_fallback") as mock_balloon, \
+             patch("threading.Thread", side_effect=mock_thread_sync), \
+             patch("sys.platform", "win32"):
+
+            vcd_ripper._send_windows_rip_notification(
+                app_name="Disc Ripper Pro",
+                total=2,
+                success=2,
+                errors=0,
+                out_folder=self.temp_dir,
+                cancelled=False,
+                timed_out=False,
+                lang="en"
+            )
+
+            self.assertTrue(mock_balloon.called)
+            call_kwargs = mock_balloon.call_args[1] if mock_balloon.call_args[1] else {}
+            call_args = mock_balloon.call_args[0]
+            # Verify title contains app name
+            title = call_kwargs.get("title") or call_args[1]
+            self.assertIn("Disc Ripper Pro", title)
 
 
 if __name__ == "__main__":

@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img alt="Version" src="https://img.shields.io/badge/version-2.0.0-6C63FF?style=flat-square"/>
+  <img alt="Version" src="https://img.shields.io/badge/version-2.0.4-6C63FF?style=flat-square"/>
   <img alt="Platform" src="https://img.shields.io/badge/platform-Windows_7_--_11_(64--bit)-blue?style=flat-square"/>
   <img alt="License" src="https://img.shields.io/badge/license-MIT-22C55E?style=flat-square"/>
   <img alt="Python" src="https://img.shields.io/badge/python-3.9%2B-F59E0B?style=flat-square"/>
@@ -74,7 +74,10 @@
 | 🖱 **Global MouseWheel Scrolling** | Hover over any scrollable view (source options, track list, right sidebar, console log) to scroll immediately without clicking to focus. |
 | 🔒 **Single-Instance Mutex** | Windows system-level mutex prevents duplicate instances from launching; re-launching brings the active window to the foreground. |
 | ⏏ **Optical Drive Ejection** | Multi-strategy safe disc ejection utilizing Win32 `DeviceIoControl` (IOCTL_STORAGE_EJECT_MEDIA) and PowerShell fallback. |
-| 🌐 **Bilingual Localization** | Instant, runtime language switching between **English** and **简体中文 (Simplified Chinese)**. |
+| 🔔 **Windows Toast Notifications** | Rich Windows 10/11 system notifications upon rip completion displaying software name, app icon, success/failure counts, and totals, with user toggle in Settings. |
+| 🩺 **Disc Health Check & Diagnostics** | Interactive optical disc integrity verification, bad sector mapping, and human-readable diagnostic report generation. |
+| 💿 **Seamless Disc Swap Recognition** | Robust drive cache flushing and stale volume handle handling, allowing instant detection when ejecting DVD and inserting VCD without restarting. |
+| 🌐 **Multilingual Localization** | Instant, runtime language switching between **English**, **简体中文 (Simplified Chinese)**, and **繁體中文 (Traditional Chinese)**. |
 
 ---
 
@@ -95,7 +98,7 @@
 
 ### Option A: Portable Release (Recommended — No Installation Required)
 
-1. Download **`Disc_Ripper_Pro_Portable_v2.0.0.zip`** from the [Releases](../../releases) directory.
+1. Download **`Disc_Ripper_Pro_Portable_v2.0.4.zip`** from the [Releases](../../releases) directory.
 2. Extract the archive to any folder on your computer.
 3. Double-click **`Disc Ripper Pro.exe`** to run.
 4. *Note: Keep the bundled `_internal\` and `ffmpeg\` folders alongside `Disc Ripper Pro.exe`.*
@@ -138,7 +141,7 @@ Or double-click `launch.bat`.
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────────────────┐
-│ [💿 Logo] Disc Ripper Pro v2.0.0               [⏏ Eject] [✏ Rename] [⚙ Settings] [Log] │  <- Header
+│ [💿 Logo] Disc Ripper Pro v2.0.4               [⏏ Eject] [✏ Rename] [⚙ Settings] [Log] │  <- Header
 ├───────────────────┬────────────────────────────────────────────────┬───────────────────┤
 │ SOURCE & SEL      │ VIDEO FILES LIST                               │ EXPORT CONTROLS   │
 │                   │                                                │                   │
@@ -179,7 +182,7 @@ Click the **⚙ Setting** button in the top-right header to configure:
 - **Interface Scaling**: Choose **100%**, **125%**, or **150%** scaling for optimal readability across 1080p, 2K, and 4K displays.
 - **Ripping Process Priority**: Adjust CPU scheduling priority (**Low**, **Medium**, **High**) to balance transcoding speed with system multitasking.
 - **Ripping FPS Mode**: Select **Passthrough** (recommended for native frame timing) or **CFR** (constant frame rate).
-- **Language**: Switch instantly between **English (EN)** and **简体中文 (中)**.
+- **Language**: Switch instantly between **English**, **简体中文**, and **繁體中文**.
 
 ---
 
@@ -194,6 +197,7 @@ Disc Ripper Pro/
 ├── CompactDisc.ico        # Multi-resolution Windows application icon
 ├── en.json                # English translation catalog
 ├── zh-CN.json             # Simplified Chinese translation catalog
+├── zh-TW.json             # Traditional Chinese (Taiwan) translation catalog
 ├── config.json            # User preferences persistence (theme, scale, priority, fps)
 ├── launch.bat             # Quick launcher script
 ├── build.bat              # PyInstaller automated packaging script
@@ -225,13 +229,13 @@ pyinstaller --noconfirm "Disc Ripper Pro.spec"
 build.bat
 ```
 
-The resulting standalone executable will be located in `dist/Disc Ripper Pro/`, and packaged into `Release/Disc_Ripper_Pro_Portable_v2.0.0.zip`.
+The resulting standalone executable will be located in `dist/Disc Ripper Pro/`, and packaged into `Release/Disc_Ripper_Pro_Portable_v2.0.4.zip`.
 
 ---
 
 ## 🧪 Testing & Reliability
 
-Disc Ripper Pro includes a comprehensive automated test suite with **152+ tests** covering:
+Disc Ripper Pro includes a comprehensive automated test suite with **162+ tests** covering:
 - DVD and VCD auto-detection and fallback routing
 - HandBrakeCLI & FFmpeg title discovery and chapter timestamp extraction
 - Multi-audio stream mapping and 5.1 channel retention

@@ -4,7 +4,7 @@ color 0B
 
 echo.
 echo  ╔══════════════════════════════════════╗
-echo  ║        Disc Ripper Pro v2.0.0        ║
+echo  ║        Disc Ripper Pro v2.0.4        ║
 echo  ║   Powered by Python + FFmpeg         ║
 echo  ╚══════════════════════════════════════╝
 echo.
